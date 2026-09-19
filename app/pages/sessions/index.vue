@@ -16,7 +16,7 @@ import {
 import type { SessionSortKey } from '~/composables/useSessionSort'
 import type { FlatSessionRow } from '~/composables/useSessionTree'
 
-const { sessions, error, loading, reload } = useSessions()
+const { sessions, error, loading, truncated, reload } = useSessions()
 const { liveSessions, connection } = useEventStream()
 const { key: sortKey, direction: sortDirection, toggle: toggleSort } = useSessionSort()
 
@@ -39,6 +39,23 @@ onBeforeUnmount(() => {
 const search = ref('')
 const liveOnly = ref(false)
 const outcomes = ref<string[]>([])
+const directory = ref<string>('any')
+
+/** The list is machine-wide, so the directory is the filter that narrows it. */
+const directories = computed(() => {
+  const counts = new Map<string, number>()
+  for (const session of sessions.value) {
+    const key = session.directory ?? '(unknown)'
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
+})
+
+/** The last two path segments, since the leading ones are shared. */
+function shortPath(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  return parts.length <= 2 ? path : `…/${parts.slice(-2).join('/')}`
+}
 
 const allOutcomes = computed(() => {
   const counts = new Map<string, number>()
@@ -50,11 +67,19 @@ const allOutcomes = computed(() => {
 })
 
 const filterActive = computed(
-  () => search.value.trim() !== '' || liveOnly.value || outcomes.value.length > 0,
+  () =>
+    search.value.trim() !== '' ||
+    liveOnly.value ||
+    outcomes.value.length > 0 ||
+    directory.value !== 'any',
 )
 
 function matches(session: SessionSummary): boolean {
   if (liveOnly.value && !liveSessions.value.has(session.id)) return false
+
+  if (directory.value !== 'any') {
+    if ((session.directory ?? '(unknown)') !== directory.value) return false
+  }
 
   const outcomeSet = new Set(outcomes.value)
   if (outcomeSet.size > 0 && !outcomeSet.has(session.outcome ?? 'unknown')) return false
@@ -232,7 +257,7 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
             type="button"
             class="reset"
             :disabled="!filterActive"
-            @click="outcomes = []; liveOnly = false; search = ''"
+            @click="outcomes = []; liveOnly = false; search = ''; directory = 'any'"
           >
             Reset
           </button>
@@ -258,10 +283,42 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
           </button>
         </section>
 
+        <section v-if="directories.length > 1" class="group">
+          <h2 class="group-title">Directory</h2>
+          <button
+            type="button"
+            class="facet-row"
+            :class="{ 'is-off': directory !== 'any' }"
+            @click="directory = 'any'"
+          >
+            <span class="facet-label">All projects</span>
+            <span class="facet-count mono">{{ formatCount(sessions.length) }}</span>
+          </button>
+          <button
+            v-for="[path, count] in directories"
+            :key="path"
+            type="button"
+            class="facet-row"
+            :class="{ 'is-off': directory !== 'any' && directory !== path }"
+            :title="path"
+            @click="directory = path"
+          >
+            <span class="facet-label">{{ shortPath(path) }}</span>
+            <span class="facet-count mono">{{ formatCount(count) }}</span>
+          </button>
+        </section>
+
         <p class="note">
-          Subagent sessions are nested under the session that spawned them. Live
-          badges come from the event stream; the list itself is polled, so it can
-          lag an event by seconds.
+          Every session on this machine, across all projects — subagents nested
+          under the session that spawned them.
+          <template v-if="truncated">
+            Showing the most recent {{ formatCount(sessions.length) }}; older
+            sessions are not loaded.
+          </template>
+          <template v-else>
+            {{ formatCount(sessions.length) }} loaded.
+          </template>
+          Live badges come from the event stream; the list is polled.
         </p>
       </aside>
 

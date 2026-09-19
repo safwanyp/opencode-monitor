@@ -45,6 +45,13 @@ export interface SessionSummary {
 export interface SessionsResponse {
   sessions: SessionSummary[]
   /**
+   * Upstream cursor for the next page, absent on the last one.
+   *
+   * The service pages sessions — it returns 50 by default — so a single request
+   * silently covers a fraction of the machine. There are 521 on this one.
+   */
+  next?: string
+  /**
    * Present when the service could not be reached. The request still succeeds,
    * because "the service is not running" is a supported state for this app
    * rather than an exceptional one — Explorer A keeps working without it.

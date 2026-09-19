@@ -11,18 +11,37 @@ import { getOpenCodeClient } from '../../utils/opencode-client'
  * app is a monitor, and the service being down is one of the things it exists to
  * show. The UI renders `error` instead of handling a rejection everywhere.
  */
-export default defineEventHandler(async (): Promise<SessionsResponse> => {
+/** The upstream accepts a large page, which keeps the client's paging short. */
+const MAX_LIMIT = 500
+const DEFAULT_LIMIT = 500
+
+export default defineEventHandler(async (event): Promise<SessionsResponse> => {
+  const query = getQuery(event) as Record<string, unknown>
+
+  const requested = Number(query['limit'])
+  const limit =
+    Number.isFinite(requested) && requested > 0
+      ? Math.min(Math.trunc(requested), MAX_LIMIT)
+      : DEFAULT_LIMIT
+
+  const params: Record<string, string | number> = { limit }
+  const cursor = query['cursor']
+  if (typeof cursor === 'string' && cursor !== '') params['cursor'] = cursor
+
   try {
-    const response = await getOpenCodeClient().get<{ data?: unknown[] }>(
-      '/api/session',
-      { limit: 100 },
-    )
+    const response = await getOpenCodeClient().get<{
+      data?: unknown[]
+      cursor?: { next?: unknown }
+    }>('/api/session', params)
 
     const sessions = (response.data ?? [])
       .map(normalizeSession)
       .filter((session): session is SessionSummary => session !== null)
 
-    return { sessions }
+    return {
+      sessions,
+      next: typeof response.cursor?.next === 'string' ? response.cursor.next : undefined,
+    }
   } catch (error) {
     return {
       sessions: [],
