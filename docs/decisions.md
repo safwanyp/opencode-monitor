@@ -1,0 +1,35 @@
+# Decisions
+
+Quick index of settled decisions. Rationale and evidence live in `docs/design.md`.
+
+| # | Decision | Choice | Rationale |
+|---|---|---|---|
+| 1 | Sources | **Two explorers, not a union** | The file log and live API share zero event types — they are different data, not two views of one |
+| 2 | Scope | **Read-only monitoring** | Explicit user constraint; nothing more |
+| 3 | Explorer B shape | **Session-first with a live label** | Readable and useful; a global firehose is hard to follow |
+| 4 | Stack | **Nuxt 4 — Nitro BFF + Vue** | One process instead of a separate Node app and Vue app; `shared/` avoids duplicated parser and types |
+| 5 | Rendering | `ssr: false` | Local live-feed dashboard; the list is client-only anyway; less hydration surface |
+| 6 | Nitro preset | `node-server` | App is inherently stateful (ring buffers, `fs.watch`, upstream SSE) |
+| 7 | Host binding | `127.0.0.1` | Local-only invariant; Nitro defaults to `0.0.0.0` and must be overridden |
+| 8 | Shared code | `shared/utils/logfmt.ts`, `shared/types/records.ts` | Write once, use in client and server |
+| 9 | Styles | Scoped SFC + one global stylesheet | Idiomatic Nuxt; CSS Modules are supported but not idiomatic |
+| 10 | Session-log endpoint | **Dropped** | `/api/experimental/session/{id}/log` emits only `log.synced`; no backfill |
+| 11 | History source | `GET /api/session/{id}/message` | Non-experimental, full transcript |
+| 12 | Live transport | `fetch` + `ReadableStream` | `EventSource` cannot send the required auth header |
+| 13 | Auth | Basic `opencode:<password>` | Password in `~/.config/opencode/service.json`; unauth returns 401 |
+| 14 | Redaction | On for B, off for A | B renders prompts, reasoning, and tool output; A is operational |
+| 15 | Noise | Mute-by-default heartbeat messages | 4 messages ≈ 85% of volume |
+| 16 | Correlation | Group by `http.span` | 13,122 distinct spans available; collapses request storms |
+| 17 | Reader lifecycle | `globalThis`-guarded singletons | Nitro plugins can re-run on dev reload; unguarded readers duplicate rows |
+
+## Rejected alternatives
+
+| Alternative | Why rejected |
+|---|---|
+| Union of file + API into one stream | Sources are disjoint in content; a union would be a fiction and would need per-row provenance badges |
+| File tail only | Discards the rich, structured session/activity data |
+| Live API only | Loses the deep file history and fails when the service is down |
+| Hono + Vite | Two apps to run and build; no `shared/` equivalent for the parser and types |
+| SPA with no server | Cannot tail a file, hold state, or hold upstream credentials |
+| Desktop shell (Electron/Tauri) | Buys nothing for a local web UI |
+| `/api/experimental/session/{id}/log` | Not replayable; emits only `log.synced` |
