@@ -18,9 +18,10 @@ Quick index of settled decisions. Rationale and evidence live in `docs/design.md
 | 12 | Live transport | `fetch` + `ReadableStream` | `EventSource` cannot send the required auth header |
 | 13 | Auth | Basic `opencode:<password>` | Password in `~/.config/opencode/service.json`; unauth returns 401 |
 | 14 | Redaction | On for B, off for A | B renders prompts, reasoning, and tool output; A is operational |
-| 15 | Noise | Mute-by-default heartbeat messages | 4 messages ≈ 85% of volume |
+| 15 | Noise | Mute-by-default heartbeat messages | 5 messages ≈ 86% of volume |
 | 16 | Correlation | Group by `http.span` | 13,122 distinct spans available; collapses request storms |
 | 17 | Reader lifecycle | `globalThis`-guarded singletons | Nitro plugins can re-run on dev reload; unguarded readers duplicate rows |
+| 18 | Rotated archives | **Inventory only, never parsed** | All 11 archives are a legacy console format, not logfmt (design §2.1); the live file carries the history |
 
 ## Rejected alternatives
 
@@ -33,3 +34,4 @@ Quick index of settled decisions. Rationale and evidence live in `docs/design.md
 | SPA with no server | Cannot tail a file, hold state, or hold upstream credentials |
 | Desktop shell (Electron/Tauri) | Buys nothing for a local web UI |
 | `/api/experimental/session/{id}/log` | Not replayable; emits only `log.synced` |
+| Parsing the legacy console archives | A second grammar to maintain for ~2,800 stale lines; the live file already carries 145k lines of history |

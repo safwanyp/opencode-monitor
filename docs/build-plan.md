@@ -15,6 +15,11 @@ single highest-risk component and the definition of done depends on it.
 - All shared shapes live in `shared/`; never duplicate a record type across client and server.
 - Background readers are `globalThis`-guarded singletons.
 - Every phase ends with a verification command that can be run from a clean checkout.
+- TypeScript is pinned to 5.x. The registry ships 7.x, but `vue-tsc` loads `typescript/lib/tsc`,
+  which TypeScript 7 no longer exports, so it crashes on startup and SFC typechecking is lost.
+- Verify with `npm test`, `npm run typecheck` and `npm run verify:logfmt -- <log>`. The typecheck
+  runs two passes: `nuxt typecheck` for app/server, and `tsconfig.tools.json` for `shared/`,
+  `scripts/` and `test/`, which no generated Nuxt tsconfig covers.
 
 ---
 
@@ -65,19 +70,22 @@ lsof -nP -iTCP:4321 -sTCP:LISTEN | grep -q '127.0.0.1:4321'                # exp
 4. **Full-file verification harness** (the definition of done):
    ```sh
    # parse every line of the live log, report failure count
-   node --experimental-strip-types scripts/verify-logfmt.ts ~/.local/share/opencode/log/opencode.log
+   npm run verify:logfmt -- ~/.local/share/opencode/log/opencode.log
+   # equivalent, and portable: node scripts/verify-logfmt.ts <log>
+   # (Node >= 23.6 strips types by default; --experimental-strip-types also works)
    ```
    The script must report `lines`, `parsed`, `failed`, and print the first N failures verbatim.
 
 **Verification**
 ```sh
 npm test                                   # unit fixtures pass
-node ... scripts/verify-logfmt.ts <log>    # failed === 0
+npm run verify:logfmt -- ~/.local/share/opencode/log/opencode.log   # failed === 0
 ```
-Run it against `opencode.log` **and** at least one rotated archive.
+Run it against `opencode.log`. Rotated archives are **not** a valid target: all 11 are a legacy
+console format, not logfmt (design §2.1), and parsing them is out of scope. The parser must not be
+special-cased to make them pass.
 
-**Exit criteria:** `failed === 0` on the 39 MB live log and on a rotated archive. No fixture is
-skipped or special-cased.
+**Exit criteria:** `failed === 0` on the 39 MB live log. No fixture is skipped or special-cased.
 
 ---
 
@@ -86,16 +94,16 @@ skipped or special-cased.
 **Goal:** the server can follow the log and hold recent records, with no duplicate readers.
 
 **Tasks**
-1. `server/utils/discovery.ts`: locate the log directory and list rotated files; resolve the
-   OpenCode service URL and password from `~/.config/opencode/service.json` plus
-   `opencode service status` (fall back to `lsof` filtered by the opencode pid). Return
-   `127.0.0.1`, never the advertised `0.0.0.0`.
+1. `server/utils/discovery.ts`: locate the log directory and list rotated archives (inventory
+   only — never parsed, design §2.1); resolve the OpenCode service URL and password from
+   `~/.config/opencode/service.json` plus `opencode service status` (fall back to `lsof` filtered
+   by the opencode pid). Return `127.0.0.1`, never the advertised `0.0.0.0`.
 2. `server/utils/ring-buffer.ts`: bounded buffer with `after`/`limit` reads.
 3. `server/utils/tailer.ts`:
    - start at `size − ~2 MB`
    - `fs.watch` on the directory + byte-offset reads
    - reset on truncation (size < offset)
-   - detect newly rotated files
+   - detect a newly rotated live file; archives themselves are never parsed
    - never emit a partial trailing line
    - backpressure: cap reads per tick
 4. `server/plugins/readers.ts`: instantiate the tailer **once**, guarded on `globalThis`.
@@ -119,7 +127,8 @@ handled without throwing.
 - `server/api/logs/records.get.ts` — `?after=&limit=`
 - `server/api/logs/stream.get.ts` — SSE, `ReadableStream` + `text/event-stream` /
   `no-cache` / `keep-alive`; heartbeats
-- `server/api/logs/files.get.ts` — rotated file list with sizes and timestamps
+- `server/api/logs/files.get.ts` — legacy archive inventory with sizes and timestamps, flagged
+  non-parseable
 - `server/api/health.get.ts` — Explorer A status (following / paused / error)
 
 **Verification**
@@ -258,7 +267,8 @@ If time is short, Phase 1 and Phase 4 are the two that decide whether the tool i
 
 1. **Virtualization library** — pick one, or hand-roll windowing. Decide at Phase 4.
 2. **Rotation trigger** — confirm whether OpenCode rotates on size or time; adjust the tailer if
-   needed (design §13 lists this as unverified).
+   needed (design §13 lists this as unverified). Every archive to date is legacy console format,
+   so do not assume a rotated file is logfmt: detect the format before parsing it.
 3. **`fs.watch` fallback** — add polling if macOS coalesces events under rapid writes.
 4. **Redaction implementation** — key-based at serialization time, or render-time masking.
    Key-based is safer; decide before Phase 7.

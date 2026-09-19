@@ -12,7 +12,9 @@ Nothing in this app writes to OpenCode. It is a viewer.
 
 ## Status
 
-**Design frozen. Implementation not started.**
+**Design frozen. Implementation in progress.** Phases 0–1 are complete: the Nuxt scaffold and the
+logfmt parser, which round-trips the live 39 MB log with zero parse failures. Server routes, the
+tailer and both explorer UIs are not built yet.
 
 ## Documents
 
@@ -37,6 +39,13 @@ instance (v2.0.8), including several findings that changed the design.
 
 3. **The log is dominated by noise.** Four heartbeat messages account for ~85% of volume. Faceting
    and mute-by-default are core features, not polish.
+
+## Corrected during implementation
+
+Three of the design's assumptions were checked against the real log and one was wrong. The rotated
+archives are **not** logfmt — all 11 are a legacy console format. Explorer A therefore parses the
+live file only and treats archives as inventory. Evidence and consequences are in
+`docs/design.md` §2.1.
 
 ## Stack
 

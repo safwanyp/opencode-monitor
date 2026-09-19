@@ -29,12 +29,12 @@ the commands noted if behavior seems off.
 
 | Fact | Value |
 |---|---|
-| Log file | `~/.local/share/opencode/log/opencode.log` — 39 MB / ~144k lines, live |
-| Log format | **logfmt**, not JSON |
-| Archives | `~/.local/share/opencode/log/<ISO-timestamp>.log` (10 present) |
-| Levels | 140,420 INFO · 3,212 WARN · 43 ERROR |
-| Roles | 100,709 `server` · 4,362 `cli` |
-| Noise | 4 messages ≈ 85% of volume (`spawning process` 50k, `watcher subscribe` 35k, `event` 27k, `watcher started` 5k) |
+| Log file | `~/.local/share/opencode/log/opencode.log` — 39 MB / ~145k lines, live |
+| Log format | **logfmt**, not JSON. The live file is 100% logfmt (verified). |
+| Archives | `~/.local/share/opencode/log/<ISO-timestamp>.log` (11 present) — **legacy console format, not logfmt.** Inventory only; never parsed. See §2.1. |
+| Levels | 141,854 INFO · 3,214 WARN · 42 ERROR |
+| Roles | 102,048 `server` · 4,393 `cli` |
+| Noise | 5 messages ≈ 86% of volume (`spawning process` 51.7k, `watcher subscribe` 35.2k, `event` 27.5k, `watcher stopped` 5.4k, `watcher started` 5.4k) |
 | Correlation key | `http.span` — 13,122 distinct values |
 | Process grouping | `run` (e.g. `0cc8cfa0`, `556d837a`) |
 | Auth | `Authorization: Basic opencode:<password>` → 200; unauth → 401 |
@@ -48,6 +48,32 @@ the commands noted if behavior seems off.
 | Session list | `GET /api/session` — cost, tokens, model, agent, directory, outcome |
 | **Not replayable** | session `/log?after=0` → only `{"type":"log.synced","seq":N}`; **no backfill** |
 | Seq | `durable.seq` orders the live stream; **resume only, not history** |
+
+### 2.1 Rotated archives are a different format
+
+Verified 2026-09-19. All 11 archives under `~/.local/share/opencode/log/` are a **legacy
+console format**, not logfmt:
+
+```
+WARN  2026-06-28T19:19:42 +1145ms service=config dir=/Users/safwanyp/.config/opencode error=Cause([Fail(NpmInstallFailedError ...
+```
+
+They span 7 Jun – 30 Jun, are 1.5 KB – 5.4 MB, total ~2,800 lines, and contain **zero** logfmt
+lines. The grammar differs in ways that matter: the human-readable message is unquoted free text
+at the end of the line, and `error=Cause([...])` contains unquoted spaces and parentheses, so it
+is not parseable as logfmt even after stripping the prefix.
+
+**Consequence:** archives are inventory only. Explorer A parses the live file and pages backwards
+*inside* it; it never parses an archive. Rotation detection is still required, because the live
+file rotates and a future archive may well be logfmt — so the tailer must not assume either format
+for a file it has not seen.
+
+```sh
+# evidence: every archive reports 0; the live file reports every line
+for f in ~/.local/share/opencode/log/*.log; do
+  printf '%8s  %s\n' "$(grep -c '^timestamp=' "$f")" "$(basename "$f")"
+done
+```
 
 ### Sample lines
 
@@ -196,7 +222,8 @@ design flaw.
 
 - `fs.watch` + byte offset; never read the whole file
 - Start at `size − ~2 MB`; page backwards in chunks for "load older"
-- Handle truncation (size < offset → reset to 0) and newly rotated files
+- Handle truncation (size < offset → reset to 0), and detect a newly rotated live file. Rotated
+  archives are never parsed (§2.1).
 - Never parse a trailing line that does not end in `\n`
 - Parser must respect quotes and backslash escapes. Required test cases:
   - `args="[\"-c\",\"...\"]"`
@@ -216,7 +243,8 @@ design flaw.
 
 ### Noise control (core, not polish)
 
-Message facets auto-derived with counts; the four heartbeat messages muted by default. Without
+Message facets auto-derived with counts; the five heartbeat messages muted by default
+(`spawning process`, `watcher subscribe`, `event`, `watcher stopped`, `watcher started`). Without
 this the app is unusable ~10 seconds after launch.
 
 ---
@@ -248,7 +276,7 @@ earns no place. Live = `/api/event`; history = `/message`.
 |---|---|---|
 | `GET /api/logs/records` | A — backfill from ring buffer | `server/api/logs/records.get.ts` |
 | `GET /api/logs/stream` | A — live SSE | `server/api/logs/stream.get.ts` |
-| `GET /api/logs/files` | A — rotated file list | `server/api/logs/files.get.ts` |
+| `GET /api/logs/files` | A — legacy archive inventory, flagged non-parseable | `server/api/logs/files.get.ts` |
 | `GET /api/events/sessions` | B — session list | `server/api/events/sessions.get.ts` |
 | `GET /api/events/session/[id]` | B — transcript | `server/api/events/session/[id].get.ts` |
 | `GET /api/events/stream` | B — live SSE | `server/api/events/stream.get.ts` |
@@ -319,14 +347,16 @@ redaction toggle) · per-source health indicator.
 | Session-log endpoint | Dropped (emits only `log.synced`) |
 | Redaction | On for B, off for A |
 | Live transport | `fetch` + `ReadableStream` (not `EventSource` — auth header required) |
-| Noise | Mute-by-default heartbeat messages |
+| Noise | Mute-by-default heartbeat messages (5) |
+| Archives | Inventory only — legacy console format, never parsed (§2.1) |
 
 ---
 
 ## 13. Known risks / unverified assumptions
 
 - **Rotation policy unverified** — archives are timestamped, but the trigger (size or time) is
-  not confirmed. The tailer must tolerate either.
+  not confirmed. The tailer must tolerate either. Every archive to date is legacy console format
+  (§2.1), so the format of a future archive is unknown: never assume a rotated file is logfmt.
 - **`fs.watch` reliability** on macOS under rapid writes — may need a polling fallback.
 - **Event type catalog is partial** — only 5 API types observed; the UI must not assume a closed
   set.
