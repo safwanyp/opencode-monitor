@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SessionSummary } from '#shared/types/events'
+import type { ContextSummary } from '#shared/types/contexts'
 import {
   billableTokens,
   formatCost,
@@ -15,6 +16,7 @@ import {
 } from '~/composables/useSessionTree'
 import type { SessionSortKey } from '~/composables/useSessionSort'
 import type { FlatSessionRow } from '~/composables/useSessionTree'
+import { useContexts, modelMismatch } from '~/composables/useContexts'
 
 const { sessions, error, loading, truncated, reload } = useSessions()
 const { liveSessions, connection } = useEventStream()
@@ -25,6 +27,8 @@ const { key: sortKey, direction: sortDirection, toggle: toggleSort } = useSessio
  * and back does not collapse everything the user just opened.
  */
 const expanded = useState<string[]>('session-expanded', () => [])
+
+const { contexts, forDirectory } = useContexts()
 
 /** Restarts the relative-time column so "12s" does not freeze at "12s". */
 const now = ref(Date.now())
@@ -41,6 +45,12 @@ const liveOnly = ref(false)
 const outcomes = ref<string[]>([])
 const directory = ref<string>('any')
 
+/**
+ * Which configuration context to show. A filter, not a mode: it narrows the same
+ * list rather than replacing it.
+ */
+const contextFilter = ref<string>('any')
+
 /** The list is machine-wide, so the directory is the filter that narrows it. */
 const directories = computed(() => {
   const counts = new Map<string, number>()
@@ -50,6 +60,46 @@ const directories = computed(() => {
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
 })
+
+/** Sessions per context, so the facet can show its weight. */
+const contextCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const session of sessions.value) {
+    const context = forDirectory(session.directory)
+    if (context) counts.set(context.id, (counts.get(context.id) ?? 0) + 1)
+  }
+  return counts
+})
+
+const selectedContext = computed<ContextSummary | null>(
+  () => contexts.value.find((c) => c.id === contextFilter.value) ?? null,
+)
+
+/**
+ * Sessions that did not use the model their context declares.
+ *
+ * Not a verdict: it can be config drift over time, or a model chosen for one
+ * invocation. The wording on the row says so, because the data cannot tell the
+ * two apart.
+ */
+const mismatches = computed(() => {
+  const map = new Map<string, ReturnType<typeof modelMismatch>>()
+  for (const session of sessions.value) {
+    const mismatch = modelMismatch(
+      forDirectory(session.directory),
+      session.agent,
+      session.model,
+    )
+    if (mismatch) map.set(session.id, mismatch)
+  }
+  return map
+})
+
+function mismatchHint(sessionId: string): string {
+  const mismatch = mismatches.value.get(sessionId)
+  if (!mismatch) return ''
+  return `Did not use the model ${mismatch.contextLabel} declares — expected ${mismatch.expected}, used ${mismatch.recorded}`
+}
 
 /** The last two path segments, since the leading ones are shared. */
 function shortPath(path: string): string {
@@ -71,7 +121,8 @@ const filterActive = computed(
     search.value.trim() !== '' ||
     liveOnly.value ||
     outcomes.value.length > 0 ||
-    directory.value !== 'any',
+    directory.value !== 'any' ||
+    contextFilter.value !== 'any',
 )
 
 function matches(session: SessionSummary): boolean {
@@ -79,6 +130,10 @@ function matches(session: SessionSummary): boolean {
 
   if (directory.value !== 'any') {
     if ((session.directory ?? '(unknown)') !== directory.value) return false
+  }
+
+  if (contextFilter.value !== 'any') {
+    if (forDirectory(session.directory)?.id !== contextFilter.value) return false
   }
 
   const outcomeSet = new Set(outcomes.value)
@@ -106,15 +161,49 @@ function matches(session: SessionSummary): boolean {
  * opens every surviving ancestor while a filter is active — both so a matched
  * subagent is never hidden behind a collapsed parent.
  */
-const rows = computed(() => {
-  const tree = filterSessionTree(buildSessionTree(sessions.value), matches)
-  const ordered = sortSessionTree(tree, sortKey.value, sortDirection.value)
-  return flattenSessionTree(ordered, {
+const tree = computed(() =>
+  sortSessionTree(
+    filterSessionTree(buildSessionTree(sessions.value), matches),
+    sortKey.value,
+    sortDirection.value,
+  ),
+)
+
+const rows = computed(() =>
+  flattenSessionTree(tree.value, {
     expanded: new Set(expanded.value),
     forceOpen: filterActive.value,
     liveSessions: liveSessions.value,
-  })
+  }),
+)
+
+/**
+ * Flagged sessions per subtree.
+ *
+ * Computed once over the tree rather than per row, and rendered on a collapsed
+ * parent so the flag is discoverable without expanding everything.
+ */
+const flaggedInSubtree = computed(() => {
+  const map = new Map<string, number>()
+
+  const visit = (node: SessionNode): number => {
+    let total = 0
+    for (const child of node.children) {
+      if (mismatches.value.has(child.session.id)) total++
+      total += visit(child)
+    }
+    map.set(node.session.id, total)
+    return total
+  }
+
+  for (const node of tree.value) visit(node)
+  return map
 })
+
+function flaggedHint(sessionId: string): string {
+  const count = flaggedInSubtree.value.get(sessionId) ?? 0
+  return `${count} session${count === 1 ? '' : 's'} below did not use the model this context declares`
+}
 
 const roots = computed(() => rows.value.filter((r) => r.node.depth === 0))
 const subagentCount = computed(
@@ -257,7 +346,7 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
             type="button"
             class="reset"
             :disabled="!filterActive"
-            @click="outcomes = []; liveOnly = false; search = ''; directory = 'any'"
+            @click="outcomes = []; liveOnly = false; search = ''; directory = 'any'; contextFilter = 'any'"
           >
             Reset
           </button>
@@ -281,6 +370,54 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
             <span class="facet-label">{{ value }}</span>
             <span class="facet-count mono">{{ formatCount(count) }}</span>
           </button>
+        </section>
+
+        <section v-if="contexts.length > 1" class="group">
+          <h2 class="group-title">Context</h2>
+          <button
+            type="button"
+            class="facet-row"
+            :class="{ 'is-off': contextFilter !== 'any' }"
+            @click="contextFilter = 'any'"
+          >
+            <span class="facet-label">All contexts</span>
+            <span class="facet-count mono">{{ formatCount(sessions.length) }}</span>
+          </button>
+          <button
+            v-for="context in contexts"
+            :key="context.id"
+            type="button"
+            class="facet-row"
+            :class="{ 'is-off': contextFilter !== 'any' && contextFilter !== context.id }"
+            :title="context.scopeDir ?? 'Sessions no project config governs'"
+            @click="contextFilter = context.id"
+          >
+            <span class="facet-label">{{ context.label }}</span>
+            <span class="facet-count mono">{{
+              formatCount(contextCounts.get(context.id) ?? 0)
+            }}</span>
+          </button>
+
+          <!-- The stack is the "why": which files merged, and in what order. -->
+          <div v-if="selectedContext" class="stack">
+            <div
+              v-for="entry in selectedContext.stack"
+              :key="entry.path"
+              class="stack-row"
+              :title="entry.path"
+            >
+              <span class="stack-kind mono">{{ entry.kind === 'global' ? 'global' : entry.kind }}</span>
+              <span class="stack-path mono">{{ shortPath(entry.path) }}</span>
+            </div>
+            <p v-if="selectedContext.keys.length" class="stack-note">
+              sets
+              <span class="mono">{{ selectedContext.keys.join(', ') }}</span>
+            </p>
+            <p v-else-if="selectedContext.id === 'default'" class="stack-note">
+              No project config applies — the baseline definitions are the whole
+              answer here.
+            </p>
+          </div>
         </section>
 
         <section v-if="directories.length > 1" class="group">
@@ -451,9 +588,23 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
                   {{ entry.descendants }}
                   <template v-if="entry.liveDescendants > 0">· {{ entry.liveDescendants }} live</template>
                 </span>
+                <span
+                  v-if="(flaggedInSubtree.get(entry.node.session.id) ?? 0) > 0"
+                  class="child-badge is-flagged mono"
+                  :title="flaggedHint(entry.node.session.id)"
+                >
+                  {{ flaggedInSubtree.get(entry.node.session.id) }} flagged
+                </span>
               </span>
               <span class="cell dir mono">{{ entry.node.session.directory ?? '—' }}</span>
-              <span class="cell model mono">{{ entry.node.session.model?.id ?? '—' }}</span>
+              <span class="cell model mono">
+                <span
+                  v-if="mismatches.get(entry.node.session.id)"
+                  class="mismatch"
+                  :title="mismatchHint(entry.node.session.id)"
+                />
+                {{ entry.node.session.model?.id ?? '—' }}
+              </span>
               <span class="cell agent">{{ entry.node.session.agent ?? '—' }}</span>
               <span
                 class="cell cost mono"
@@ -935,12 +1086,79 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
   border-radius: var(--radius-xs);
 }
 
+.child-badge.is-flagged {
+  background-color: var(--color-warn-bg);
+  color: var(--color-warn);
+}
+
 .row.is-child .title-text {
   font-weight: var(--font-weight-regular);
   color: var(--color-text-secondary);
 }
 
 .row.is-child .cell.dir {
+  color: var(--color-text-muted);
+}
+
+/* Sits in the model lane so the flagged value is the one you look at. A ring,
+   not a filled dot: this is a question, not an error. */
+.mismatch {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-warn);
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.cell.model {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  padding: 8px 9px;
+  background-color: var(--color-raised);
+  border-radius: var(--radius-sm);
+}
+
+.stack-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.stack-kind {
+  flex-shrink: 0;
+  width: 58px;
+  font-size: 9.5px;
+  line-height: 14px;
+  color: var(--color-text-faint);
+}
+
+.stack-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--color-text-secondary);
+}
+
+.stack-note {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 14px;
   color: var(--color-text-muted);
 }
 

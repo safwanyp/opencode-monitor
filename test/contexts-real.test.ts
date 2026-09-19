@@ -4,11 +4,13 @@ import {
   buildContexts,
   compareModels,
   contextFor,
-  discoverConfigs,
   expectedModel,
+  type Context,
+} from '../shared/utils/contexts.ts'
+import {
+  discoverConfigs,
   readAgentDefinitions,
   shortenPath,
-  type Context,
 } from '../server/utils/contexts.ts'
 import { resolveServiceConnection } from '../server/utils/discovery.ts'
 

@@ -1,45 +1,30 @@
 /**
- * OpenCode configuration contexts.
+ * OpenCode configuration contexts — the filesystem half.
  *
- * Configuration is discovered by walking the ancestor chain of the directories
- * sessions actually ran in. That bounds the cost to the sessions that exist
- * (~940 stats for 521 sessions here) and means every context found governs real
- * work — a config in a repo OpenCode has never opened governs nothing.
+ * Discovery walks the ancestor chain of the directories sessions actually ran
+ * in. That bounds the cost to the sessions that exist (~940 stat() calls for 521
+ * sessions here) and means every context found governs real work — a config in a
+ * repo OpenCode has never opened governs nothing.
  *
- * ## Precedence
- *
- * Lowest to highest:
- *
- *   1. the global config (`~/.config/opencode/opencode.json(c)`)
- *   2. direct `opencode.json(c)` files, farthest ancestor → nearest
- *   3. `.opencode/opencode.json(c)` files, farthest ancestor → nearest
- *
- * Step 3 is the surprising one: **every `.opencode` config outranks every direct
- * config**, regardless of depth. An implementation that just takes the nearest
- * `opencode.json` gets this wrong the first time a `.opencode/` appears.
+ * The resolution rules themselves are pure and live in `shared/utils/contexts.ts`,
+ * so the client can attribute sessions to contexts without reimplementing them.
+ * Nothing is re-exported from here: Nuxt already auto-imports `shared/utils/*`,
+ * and re-exporting produced duplicate-name warnings on every start.
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import {
+  buildContexts,
+  type ConfigKind,
+  type Context,
+  type DiscoveredConfig,
+} from '#shared/utils/contexts'
 import { frontMatterModel, tryParseJsonc } from '#shared/utils/jsonc'
 
 import { resolveConfigHome } from './discovery'
-
-export type ConfigKind = 'global' | 'direct' | 'dotopencode'
-
-export interface DiscoveredConfig {
-  path: string
-  /** The directory this file scopes. */
-  scopeDir: string
-  kind: ConfigKind
-  /** Parsed document, absent when the file could not be read or parsed. */
-  document?: unknown
-  /** Top-level keys the file sets, so a context can say what it contributes. */
-  keys: string[]
-  parseError?: string
-}
 
 /** Candidate filenames, in the order OpenCode applies them. */
 export const CONFIG_FILES: ReadonlyArray<{ name: string; kind: ConfigKind }> = [
@@ -56,7 +41,16 @@ export function globalConfigPaths(configHome = resolveConfigHome()): string[] {
   ]
 }
 
-async function readConfig(path: string, kind: ConfigKind): Promise<DiscoveredConfig | null> {
+/** `~` for the home directory, so paths read well in a UI. */
+export function shortenPath(path: string, home = homedir()): string {
+  if (path === home) return '~'
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
+}
+
+async function readConfig(
+  path: string,
+  kind: ConfigKind,
+): Promise<DiscoveredConfig | null> {
   let raw: string
   try {
     const info = await stat(path)
@@ -66,9 +60,12 @@ async function readConfig(path: string, kind: ConfigKind): Promise<DiscoveredCon
     return null
   }
 
-  const scopeDir = kind === 'global'
-    ? dirname(dirname(path)) // ~/.config/opencode/opencode.jsonc -> ~/.config
-    : dirname(path).replace(/\/\.opencode$/, '')
+  // `~/.config/opencode/opencode.jsonc` scopes its grandparent, while a
+  // `.opencode/opencode.jsonc` scopes the directory containing `.opencode/`.
+  const scopeDir =
+    kind === 'global'
+      ? dirname(dirname(path))
+      : dirname(path).replace(/\/\.opencode$/, '')
 
   const parsed = tryParseJsonc<Record<string, unknown>>(raw)
   if (!parsed.ok) {
@@ -84,20 +81,12 @@ async function readConfig(path: string, kind: ConfigKind): Promise<DiscoveredCon
   }
 }
 
-async function readIfPresent(path: string, kind: ConfigKind) {
-  return readConfig(path, kind)
-}
-
-/** `~` for the home directory, so paths read well in a UI. */
-export function shortenPath(path: string, home = homedir()): string {
-  return path === home ? '~' : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
-}
-
 /**
  * Every config file governing any of `directories`, plus the global config.
  *
  * Directories are walked to the filesystem root, because that is what OpenCode
- * does — a config one level above a project still applies to it.
+ * does — a config one level above a project still applies to it. The global
+ * config is added explicitly, since it is on no session's ancestor chain.
  */
 export async function discoverConfigs(
   directories: Iterable<string>,
@@ -106,7 +95,7 @@ export async function discoverConfigs(
   const found = new Map<string, DiscoveredConfig>()
 
   for (const path of globalConfigPaths(options.configHome)) {
-    const config = await readIfPresent(path, 'global')
+    const config = await readConfig(path, 'global')
     if (config) found.set(config.path, config)
   }
 
@@ -134,135 +123,7 @@ export async function discoverConfigs(
   return [...found.values()]
 }
 
-/** Path segments, used to order ancestors from least to most specific. */
-export function depthOf(path: string): number {
-  return path.split('/').filter(Boolean).length
-}
-
-export function isAncestorOf(scopeDir: string, dir: string): boolean {
-  return dir === scopeDir || dir.startsWith(scopeDir.endsWith('/') ? scopeDir : `${scopeDir}/`)
-}
-
-/**
- * The configs governing `dir`, lowest precedence first.
- *
- * This is the function the whole feature rests on, so it is pure and tested
- * independently of the filesystem.
- */
-export function stackFor(dir: string, configs: DiscoveredConfig[]): DiscoveredConfig[] {
-  const byDepth = (kind: ConfigKind) =>
-    configs
-      .filter((config) => config.kind === kind && isAncestorOf(config.scopeDir, dir))
-      .sort((a, b) => depthOf(a.scopeDir) - depthOf(b.scopeDir))
-
-  return [
-    // The global config applies everywhere, and is the lowest precedence.
-    ...configs.filter((config) => config.kind === 'global'),
-    ...byDepth('direct'),
-    // Applied last, so a `.opencode` config outranks every direct one.
-    ...byDepth('dotopencode'),
-  ]
-}
-
-export interface Context {
-  id: string
-  /** Home-relative scope, or `Default` for the global-only context. */
-  label: string
-  /** Null for the default context, which has no scope directory of its own. */
-  scopeDir: string | null
-  stack: DiscoveredConfig[]
-  depth: number
-  /** Keys contributed beyond the global config, i.e. what makes this context. */
-  keys: string[]
-}
-
-/**
- * The contexts a session can belong to.
- *
- * One per config-carrying directory, plus the default. A session belongs to the
- * innermost context whose scope contains it.
- */
-export function buildContexts(configs: DiscoveredConfig[]): Context[] {
-  const scopes = new Map<string, DiscoveredConfig[]>()
-
-  for (const config of configs) {
-    if (config.kind === 'global') continue
-    const list = scopes.get(config.scopeDir)
-    if (list) list.push(config)
-    else scopes.set(config.scopeDir, [config])
-  }
-
-  const contexts: Context[] = [
-    {
-      id: 'default',
-      label: 'Default',
-      scopeDir: null,
-      // No scope directory to walk, so the global config is the whole stack.
-      stack: configs.filter((config) => config.kind === 'global'),
-      depth: -1,
-      keys: [],
-    },
-  ]
-
-  for (const [scopeDir, scopeConfigs] of scopes) {
-    const stack = stackFor(scopeDir, configs)
-    const globalKeys = new Set(
-      stack.filter((c) => c.kind === 'global').flatMap((c) => c.keys),
-    )
-    const keys = [...new Set(scopeConfigs.flatMap((c) => c.keys))]
-      .filter((key) => !globalKeys.has(key))
-      .sort()
-
-    contexts.push({
-      id: shortenPath(scopeDir).replace(/^\W+/, '').replace(/\W+/g, '-').toLowerCase() || 'scope',
-      label: shortenPath(scopeDir),
-      scopeDir,
-      stack,
-      depth: depthOf(scopeDir),
-      keys,
-    })
-  }
-
-  return contexts.sort((a, b) => b.depth - a.depth)
-}
-
-/** The innermost context whose scope contains `dir`, or the default one. */
-export function contextFor(dir: string, contexts: Context[]): Context | null {
-  let best: Context | null = null
-  for (const context of contexts) {
-    if (context.scopeDir === null) continue
-    if (!isAncestorOf(context.scopeDir, dir)) continue
-    if (!best || context.depth > best.depth) best = context
-  }
-  return best ?? contexts.find((context) => context.id === 'default') ?? null
-}
-
-export interface ModelRef {
-  provider: string
-  model: string
-  /** OpenCode's own default when the declaration omits `#variant`. */
-  variant: string
-}
-
-export const DEFAULT_VARIANT = 'default'
-
-/** `github-copilot/gpt-5.6-sol` or `openai/gpt-5.6-sol#medium`. */
-export function parseModelRef(value: string | undefined | null): ModelRef | null {
-  if (!value) return null
-  const trimmed = value.trim()
-  const hash = trimmed.indexOf('#')
-  const body = hash === -1 ? trimmed : trimmed.slice(0, hash)
-  const variant = hash === -1 ? DEFAULT_VARIANT : trimmed.slice(hash + 1) || DEFAULT_VARIANT
-  const slash = body.indexOf('/')
-  if (slash <= 0 || slash === body.length - 1) return null
-  return {
-    provider: body.slice(0, slash),
-    model: body.slice(slash + 1),
-    variant,
-  }
-}
-
-/** Reads agent definitions from the global config dir. */
+/** Agent definitions from the global config dir — the baseline configs override. */
 export async function readAgentDefinitions(
   configHome = resolveConfigHome(),
 ): Promise<Map<string, string>> {
@@ -289,50 +150,24 @@ export async function readAgentDefinitions(
   return definitions
 }
 
-function agentModelIn(document: unknown, agent: string): string | undefined {
-  if (!document || typeof document !== 'object') return undefined
-  const agents = (document as Record<string, unknown>)['agents']
-  if (!agents || typeof agents !== 'object') return undefined
-  const entry = (agents as Record<string, unknown>)[agent]
-  if (typeof entry === 'string') return entry
-  if (entry && typeof entry === 'object') {
-    const model = (entry as Record<string, unknown>)['model']
-    if (typeof model === 'string') return model
-  }
-  return undefined
+export interface DiscoveredLayout {
+  configs: DiscoveredConfig[]
+  contexts: Context[]
+  definitions: Map<string, string>
 }
 
 /**
- * The model an agent should use in a context.
+ * Discover configs from the directories sessions ran in, and build the contexts.
  *
- * The most specific declaration wins, and it **replaces** the definition's
- * wholesale rather than merging field by field — verified against the live
- * workspace, where a config declaring `github-copilot/gpt-5.6-sol` with no
- * variant produced `#default` sessions even though the definition said `#medium`.
+ * Directories come from the caller rather than from a filesystem scan, which is
+ * what keeps this cheap and keeps unused configs out of the result.
  */
-export function expectedModel(
-  agent: string,
-  stack: DiscoveredConfig[],
-  definitions: Map<string, string>,
-): ModelRef | null {
-  for (let i = stack.length - 1; i >= 0; i--) {
-    const declared = agentModelIn(stack[i]?.document, agent)
-    if (declared) return parseModelRef(declared)
-  }
-
-  return parseModelRef(definitions.get(agent))
-}
-
-export interface ModelComparison {
-  matches: boolean
-  /** Fields that differ, so a caller can say precisely what changed. */
-  differing: Array<'provider' | 'model' | 'variant'>
-}
-
-export function compareModels(expected: ModelRef, recorded: ModelRef): ModelComparison {
-  const differing: ModelComparison['differing'] = []
-  if (expected.provider !== recorded.provider) differing.push('provider')
-  if (expected.model !== recorded.model) differing.push('model')
-  if (expected.variant !== recorded.variant) differing.push('variant')
-  return { matches: differing.length === 0, differing }
+export async function discoverLayout(
+  directories: Iterable<string>,
+  options: { configHome?: string } = {},
+): Promise<DiscoveredLayout> {
+  const configs = await discoverConfigs(directories, options)
+  const contexts = buildContexts(configs, (path) => shortenPath(path))
+  const definitions = await readAgentDefinitions(options.configHome)
+  return { configs, contexts, definitions }
 }

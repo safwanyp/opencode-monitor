@@ -22,6 +22,14 @@ Quick index of settled decisions. Rationale and evidence live in `docs/design.md
 | 16 | Correlation | Group by `http.span` | 13,122 distinct spans available; collapses request storms |
 | 17 | Reader lifecycle | `globalThis`-guarded singletons | Nitro plugins can re-run on dev reload; unguarded readers duplicate rows |
 | 18 | Rotated archives | **Inventory only, never parsed** | All 11 archives are a legacy console format, not logfmt (design §2.1); the live file carries the history |
+| 19 | Context identity | **The resolved stack, not a config file** | What governs a session is a merge of global + ancestor configs; naming one file would hide the others |
+| 20 | Discovery scope | **Only directories observed sessions ran in** | Bounds the walk to ~940 `stat()` calls for 521 sessions, and keeps a config no session used out of the picker |
+| 21 | Precedence | **Every `.opencode` config outranks every direct one** | Nearest-ancestor alone is right until a `.opencode/` appears, then silently wrong |
+| 22 | Declaration vs definition | **Declaration replaces the definition wholesale** | Verified live: a config declaring no variant produced `#default` sessions though the definition said `#medium` |
+| 23 | Mismatch wording | **"Did not use the declared model"** | Drift over time and a per-invocation override are indistinguishable in the data; "misconfigured" would assert more than is known |
+| 24 | Unscored agents | **Never guessed** | `build` has no definition and no declaration, so scoring it would manufacture mismatches |
+| 25 | Model resolution | **Server-side, one implementation** | The client receives `agent → provider/model#variant` and looks it up, so it cannot disagree with the server |
+| 26 | Context switcher | **A filter, not a mode** | It narrows the same session list; sessions are the only surface it governs for now |
 
 ## Rejected alternatives
 
@@ -35,3 +43,7 @@ Quick index of settled decisions. Rationale and evidence live in `docs/design.md
 | Desktop shell (Electron/Tauri) | Buys nothing for a local web UI |
 | `/api/experimental/session/{id}/log` | Not replayable; emits only `log.synced` |
 | Parsing the legacy console archives | A second grammar to maintain for ~2,800 stale lines; the live file already carries 145k lines of history |
+| Selecting a context by config file | A session can be governed by several files at once; the file is an implementation detail of the stack |
+| Scanning the whole filesystem for configs | Finds configs no session ever used, and pays for them |
+| Re-parsing configs in the client | Two implementations of the precedence rules that can disagree; the server resolves once |
+| Hiding the mismatch detail behind a filter only | The flags are all on subagents; with parents collapsed and no rollup the feature was invisible |

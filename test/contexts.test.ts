@@ -11,7 +11,7 @@ import {
   stackFor,
   type ConfigKind,
   type DiscoveredConfig,
-} from '../server/utils/contexts.ts'
+} from '../shared/utils/contexts.ts'
 import { frontMatterModel, parseJsonc, stripJsonc, tryParseJsonc } from '../shared/utils/jsonc.ts'
 
 const HOME = '/Users/me'
