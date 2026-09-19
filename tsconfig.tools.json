@@ -6,6 +6,12 @@
     "moduleResolution": "bundler",
     "types": ["node"],
 
+    // Mirrors the Nuxt alias so test files can import server code that uses it.
+    "baseUrl": ".",
+    "paths": {
+      "#shared/*": ["./shared/*"]
+    },
+
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
