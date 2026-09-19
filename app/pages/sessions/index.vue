@@ -125,6 +125,9 @@ const filterActive = computed(
     contextFilter.value !== 'any',
 )
 
+/** Hoisted, since `matches` runs once per session on every pass over the list. */
+const outcomeSet = computed(() => new Set(outcomes.value))
+
 function matches(session: SessionSummary): boolean {
   if (liveOnly.value && !liveSessions.value.has(session.id)) return false
 
@@ -136,8 +139,7 @@ function matches(session: SessionSummary): boolean {
     if (forDirectory(session.directory)?.id !== contextFilter.value) return false
   }
 
-  const outcomeSet = new Set(outcomes.value)
-  if (outcomeSet.size > 0 && !outcomeSet.has(session.outcome ?? 'unknown')) return false
+  if (outcomeSet.value.size > 0 && !outcomeSet.value.has(session.outcome ?? 'unknown')) return false
 
   const query = search.value.trim().toLowerCase()
   if (query === '') return true
@@ -205,22 +207,48 @@ function flaggedHint(sessionId: string): string {
   return `${count} session${count === 1 ? '' : 's'} below did not use the model this context declares`
 }
 
-const roots = computed(() => rows.value.filter((r) => r.node.depth === 0))
+/**
+ * The sessions the current filters select, independent of how the tree draws
+ * them.
+ *
+ * Deliberately not `rows`: the tree keeps non-matching ancestors so a matched
+ * subagent is not orphaned, and every parent row shows a subtree total. Summing
+ * rows would therefore count some sessions twice and others not at all. This
+ * counts each selected session exactly once, which is what the header reports.
+ */
+const viewSessions = computed(() => sessions.value.filter(matches))
+
+const roots = computed(
+  () => viewSessions.value.filter((s) => s.parentID === undefined).length,
+)
 const subagentCount = computed(
-  () => sessions.value.filter((s) => s.parentID !== undefined).length,
+  () => viewSessions.value.filter((s) => s.parentID !== undefined).length,
 )
 
 const totals = computed(() => {
   let cost = 0
   let tokens = 0
-  for (const session of sessions.value) {
+  for (const session of viewSessions.value) {
     cost += session.cost ?? 0
     tokens += billableTokens(session.tokens) ?? 0
   }
   return { cost, tokens }
 })
 
-const activeNow = computed(() => liveSessions.value.size)
+/**
+ * Live work in the current view.
+ *
+ * Unfiltered this is the raw count, so a session that has started but not yet
+ * reached the list still lights up. Filtering by definition excludes sessions we
+ * cannot attribute, so the intersection is the honest answer there.
+ */
+const activeNow = computed(() => {
+  if (!filterActive.value) return liveSessions.value.size
+  const ids = new Set(viewSessions.value.map((session) => session.id))
+  let count = 0
+  for (const id of liveSessions.value.keys()) if (ids.has(id)) count++
+  return count
+})
 
 const expandableIds = computed(() =>
   rows.value.filter((r) => r.hasChildren).map((r) => r.node.session.id),
@@ -469,7 +497,7 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
           </div>
           <span class="vrule" />
           <div class="stat">
-            <span class="stat-value mono">{{ formatCount(roots.length) }}</span>
+            <span class="stat-value mono">{{ formatCount(roots) }}</span>
             <span class="stat-label">Sessions</span>
           </div>
           <span class="vrule" />
