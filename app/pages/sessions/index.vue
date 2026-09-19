@@ -9,6 +9,7 @@ import {
 } from '#shared/utils/format'
 
 const { sessions, error, loading, reload } = useSessions()
+const { key: sortKey, direction: sortDirection, toggle: toggleSort } = useSessionSort()
 const { liveSessions, connection } = useEventStream()
 
 /** Restarts the relative-time column so "12s" does not freeze at "12s". */
@@ -34,11 +35,15 @@ const allOutcomes = computed(() => {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])
 })
 
+const sorted = computed(() =>
+  sortSessions(sessions.value, sortKey.value, sortDirection.value),
+)
+
 const visible = computed(() => {
   const query = search.value.trim().toLowerCase()
   const outcomeSet = new Set(outcomes.value)
 
-  return sessions.value.filter((session) => {
+  return sorted.value.filter((session) => {
     if (liveOnly.value && !liveSessions.value.has(session.id)) return false
     if (outcomeSet.size > 0 && !outcomeSet.has(session.outcome ?? 'unknown')) return false
     if (query !== '') {
@@ -78,6 +83,17 @@ function toggleOutcome(value: string) {
 function isLive(session: SessionSummary) {
   return liveSessions.value.has(session.id)
 }
+
+const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: boolean }> = [
+  { key: 'title', label: 'Title', cls: 'title' },
+  { key: 'directory', label: 'Directory', cls: 'dir' },
+  { key: 'model', label: 'Model', cls: 'model' },
+  { key: 'agent', label: 'Agent', cls: 'agent' },
+  { key: 'cost', label: 'Cost', cls: 'cost', right: true },
+  { key: 'tokens', label: 'Tokens', cls: 'tokens', right: true },
+  { key: 'outcome', label: 'Outcome', cls: 'outcome' },
+  { key: 'updated', label: 'Updated', cls: 'updated', right: true },
+]
 
 const OUTCOME_TONE: Record<string, string> = {
   succeeded: 'ok',
@@ -188,16 +204,44 @@ const OUTCOME_TONE: Record<string, string> = {
           </div>
         </div>
 
-        <div class="columns" aria-hidden="true">
-          <span class="col marker" />
-          <span class="col title">Title</span>
-          <span class="col dir">Directory</span>
-          <span class="col model">Model</span>
-          <span class="col agent">Agent</span>
-          <span class="col cost">Cost</span>
-          <span class="col tokens">Tokens</span>
-          <span class="col outcome">Outcome</span>
-          <span class="col updated">Updated</span>
+        <div class="columns">
+          <span class="col marker" aria-hidden="true" />
+          <span
+            v-for="column in COLUMNS"
+            :key="column.key"
+            class="col"
+            :class="[column.cls, { right: column.right }]"
+          >
+            <button
+              type="button"
+              class="sort"
+              :class="{ 'is-active': sortKey === column.key }"
+              :aria-sort="
+                sortKey === column.key
+                  ? sortDirection === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'
+              "
+              :title="`Sort by ${column.label.toLowerCase()}`"
+              @click="toggleSort(column.key)"
+            >
+              <span>{{ column.label }}</span>
+              <svg
+                v-if="sortKey === column.key"
+                width="10"
+                height="10"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path :d="sortDirection === 'asc' ? 'M8 12.5 8 3.5M4 7 8 3l4 4' : 'M8 3.5 8 12.5M4 9l4 4 4-4'" />
+              </svg>
+            </button>
+          </span>
         </div>
 
         <div class="list">
@@ -522,6 +566,32 @@ const OUTCOME_TONE: Record<string, string> = {
   font-weight: var(--font-weight-semibold);
   letter-spacing: var(--tracking-caps);
   color: var(--color-text-muted);
+}
+
+/* The lane widths stay on the cell, so the button inside cannot shift them. */
+.sort {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 30px;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: inherit;
+}
+
+.col.right .sort {
+  justify-content: flex-end;
+}
+
+.sort:hover {
+  color: var(--color-text-secondary);
+}
+
+.sort.is-active {
+  color: var(--color-text);
 }
 
 .marker {
