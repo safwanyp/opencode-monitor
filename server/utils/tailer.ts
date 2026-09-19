@@ -80,7 +80,11 @@ export interface TailerOptions {
    * backlog is spread across pumps so the event loop keeps turning.
    */
   maxBytesPerPump?: number
-  /** Safety-net poll interval, because fs.watch is unreliable on macOS. */
+  /**
+   * Safety-net poll interval, because fs.watch is unreliable on macOS under
+   * rapid writes. This bounds worst-case detection latency; see the note on
+   * `DEFAULT_POLL_INTERVAL_MS`.
+   */
   pollIntervalMs?: number
   onBatch: (batch: TailBatch) => void
   onEvent?: (event: TailerEvent) => void
@@ -88,7 +92,16 @@ export interface TailerOptions {
 
 const DEFAULT_START_BYTES_BACK = 2 * 1024 * 1024
 const DEFAULT_MAX_BYTES_PER_PUMP = 256 * 1024
-const DEFAULT_POLL_INTERVAL_MS = 1000
+/**
+ * Safety-net poll interval.
+ *
+ * This is also the worst-case detection latency whenever `fs.watch` drops or
+ * coalesces an event, which macOS does under rapid writes. Measured with
+ * `fs.watch` working, detection is ~13ms; with it silent, detection is bounded
+ * by this value. 250ms keeps the worst case comfortably inside the ~1s budget
+ * for a cost of four `stat` calls a second.
+ */
+const DEFAULT_POLL_INTERVAL_MS = 250
 
 /** Guards against a pathological reschedule loop while draining. */
 const MAX_PUMPS_PER_DRAIN = 512

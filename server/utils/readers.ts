@@ -35,6 +35,8 @@ export interface ReaderStats {
   /** Offsets that did not advance. Any non-zero value is a real bug. */
   duplicateOffsets: number
   lastBatchAt: number | null
+  /** Newer than `lastBatchAt` means the reader is currently unhealthy. */
+  lastErrorAt: number | null
 }
 
 export interface ReadersState {
@@ -61,6 +63,7 @@ function createState(): ReadersState {
       parseFailures: 0,
       duplicateOffsets: 0,
       lastBatchAt: null,
+      lastErrorAt: null,
     },
   }
 }
@@ -114,22 +117,51 @@ function acceptBatch(state: ReadersState, batch: TailBatch): void {
   state.stats.lastBatchAt = Date.now()
 }
 
-function deriveLogHealth(state: ReadersState): SourceHealth {
-  if (!state.tailer) {
-    return { status: 'paused' }
+export interface LogHealthInput {
+  /** False before the reader starts, or after it has been stopped. */
+  hasTailer: boolean
+  records: number
+  parseFailures: number
+  lastBatchAt: number | null
+  lastErrorAt: number | null
+  /** Injectable clock, so the staleness wording can be tested. */
+  now?: number
+}
+
+/**
+ * Explorer A health.
+ *
+ * Note the deliberate semantics: a source that has stopped writing is still
+ * `following`. We are following the file perfectly well; the *source* is quiet.
+ * Reporting `paused` would conflate "the reader stopped" with "nothing new", so
+ * staleness lives in the detail instead.
+ */
+export function deriveLogHealth(input: LogHealthInput): SourceHealth {
+  const now = input.now ?? Date.now()
+
+  if (!input.hasTailer) return { status: 'paused' }
+
+  // Only unhealthy if nothing has been read since the last failure. A transient
+  // error that the next poll recovered from is not a health problem.
+  if (
+    input.lastErrorAt !== null &&
+    (input.lastBatchAt === null || input.lastErrorAt > input.lastBatchAt)
+  ) {
+    return {
+      status: 'error',
+      detail: `reader failed ${formatAge(now - input.lastErrorAt)} ago`,
+    }
   }
 
-  const { lastBatchAt, records, parseFailures } = state.stats
-  const age = lastBatchAt ? Date.now() - lastBatchAt : null
-
-  const parts: string[] = [`${records.toLocaleString('en-US')} records`]
-  if (age !== null) parts.push(`last write ${formatAge(age)} ago`)
-  if (parseFailures > 0) parts.push(`${parseFailures} unparsed`)
-
-  return {
-    status: 'following',
-    detail: parts.join(' · '),
+  const parts = [`${input.records.toLocaleString('en-US')} records`]
+  if (input.lastBatchAt !== null) {
+    parts.push(`last write ${formatAge(now - input.lastBatchAt)} ago`)
   }
+  if (input.parseFailures > 0) {
+    parts.push(`${input.parseFailures} unparsed`)
+  }
+
+  return { status: 'following', detail: parts.join(' · ') }
 }
 
 function formatAge(ms: number): string {
@@ -143,8 +175,15 @@ function formatAge(ms: number): string {
 
 export function getHealth(): HealthResponse {
   const state = getReaders()
+
   return {
-    log: deriveLogHealth(state),
+    log: deriveLogHealth({
+      hasTailer: state.tailer !== null,
+      records: state.stats.records,
+      parseFailures: state.stats.parseFailures,
+      lastBatchAt: state.stats.lastBatchAt,
+      lastErrorAt: state.stats.lastErrorAt,
+    }),
     // Explorer B is wired in Phase 6 and reports honestly until then.
     api: { status: 'unknown', detail: 'not wired yet' },
   }
@@ -185,6 +224,7 @@ export async function startReaders(): Promise<void> {
     onBatch: (batch) => acceptBatch(state, batch),
     onEvent: (event: TailerEvent) => {
       if (event.kind === 'error') {
+        state.stats.lastErrorAt = Date.now()
         console.warn(
           `[readers] ${event.kind} on ${event.path}: ${event.detail ?? ''}`,
           event.error ?? '',

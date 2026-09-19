@@ -370,7 +370,12 @@ redaction toggle) · per-source health indicator.
 - **Rotation policy unverified** — archives are timestamped, but the trigger (size or time) is
   not confirmed. The tailer must tolerate either. Every archive to date is legacy console format
   (§2.1), so the format of a future archive is unknown: never assume a rotated file is logfmt.
-- **`fs.watch` reliability** on macOS under rapid writes — may need a polling fallback.
+- **`fs.watch` reliability** on macOS under rapid writes — **mitigated**. A 250 ms poll runs alongside
+  the watch as a safety net, and the interval is what bounds worst-case latency when the watch drops
+  or coalesces an event. Measured: 12.8 ms median detection with the watch firing, 15.4 ms worst of
+  40 samples; 317 ms end-to-end from bytes landing on disk to an SSE client. Note that a log line's
+  own `timestamp` typically trails the disk write by ~680 ms, because OpenCode buffers writes — so
+  latency measured against that field overstates ours by that much.
 - **Event type catalog is partial** — only 5 API types observed; the UI must not assume a closed
   set.
 - **Some session endpoints are `/experimental`** — treat those as optional; prefer
