@@ -21,6 +21,14 @@ export interface SessionTokens {
 
 export interface SessionSummary {
   id: string
+  /**
+   * The session that spawned this one, when it is a subagent.
+   *
+   * Present on the upstream payload but easy to miss: a sample of root sessions
+   * shows no such key at all. In practice most sessions have one — 42 of 50 in
+   * the live workspace — so a flat list is mostly subagents.
+   */
+  parentID?: string
   title: string
   directory?: string
   agent?: string

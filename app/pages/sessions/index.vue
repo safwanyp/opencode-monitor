@@ -7,10 +7,23 @@ import {
   formatRelative,
   formatTokens,
 } from '#shared/utils/format'
+import {
+  buildSessionTree,
+  filterSessionTree,
+  flattenSessionTree,
+  sortSessionTree,
+} from '~/composables/useSessionTree'
+import type { SessionSortKey } from '~/composables/useSessionSort'
 
 const { sessions, error, loading, reload } = useSessions()
-const { key: sortKey, direction: sortDirection, toggle: toggleSort } = useSessionSort()
 const { liveSessions, connection } = useEventStream()
+const { key: sortKey, direction: sortDirection, toggle: toggleSort } = useSessionSort()
+
+/**
+ * Which parents are open. Persisted in `useState` so a round trip into a session
+ * and back does not collapse everything the user just opened.
+ */
+const expanded = useState<string[]>('session-expanded', () => [])
 
 /** Restarts the relative-time column so "12s" does not freeze at "12s". */
 const now = ref(Date.now())
@@ -35,32 +48,52 @@ const allOutcomes = computed(() => {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])
 })
 
-const sorted = computed(() =>
-  sortSessions(sessions.value, sortKey.value, sortDirection.value),
+const filterActive = computed(
+  () => search.value.trim() !== '' || liveOnly.value || outcomes.value.length > 0,
 )
 
-const visible = computed(() => {
-  const query = search.value.trim().toLowerCase()
-  const outcomeSet = new Set(outcomes.value)
+function matches(session: SessionSummary): boolean {
+  if (liveOnly.value && !liveSessions.value.has(session.id)) return false
 
-  return sorted.value.filter((session) => {
-    if (liveOnly.value && !liveSessions.value.has(session.id)) return false
-    if (outcomeSet.size > 0 && !outcomeSet.has(session.outcome ?? 'unknown')) return false
-    if (query !== '') {
-      const haystack = [
-        session.title,
-        session.directory ?? '',
-        session.model?.id ?? '',
-        session.agent ?? '',
-        session.id,
-      ]
-        .join(' ')
-        .toLowerCase()
-      if (!haystack.includes(query)) return false
-    }
-    return true
+  const outcomeSet = new Set(outcomes.value)
+  if (outcomeSet.size > 0 && !outcomeSet.has(session.outcome ?? 'unknown')) return false
+
+  const query = search.value.trim().toLowerCase()
+  if (query === '') return true
+
+  return [
+    session.title,
+    session.directory ?? '',
+    session.model?.id ?? '',
+    session.agent ?? '',
+    session.id,
+  ]
+    .join(' ')
+    .toLowerCase()
+    .includes(query)
+}
+
+/**
+ * Tree, filtered, sorted, flattened.
+ *
+ * Order matters: filtering keeps ancestors of a match, and the flatten step
+ * opens every surviving ancestor while a filter is active — both so a matched
+ * subagent is never hidden behind a collapsed parent.
+ */
+const rows = computed(() => {
+  const tree = filterSessionTree(buildSessionTree(sessions.value), matches)
+  const ordered = sortSessionTree(tree, sortKey.value, sortDirection.value)
+  return flattenSessionTree(ordered, {
+    expanded: new Set(expanded.value),
+    forceOpen: filterActive.value,
+    liveSessions: liveSessions.value,
   })
 })
+
+const roots = computed(() => rows.value.filter((r) => r.node.depth === 0))
+const subagentCount = computed(
+  () => sessions.value.filter((s) => s.parentID !== undefined).length,
+)
 
 const totals = computed(() => {
   let cost = 0
@@ -74,14 +107,40 @@ const totals = computed(() => {
 
 const activeNow = computed(() => liveSessions.value.size)
 
+const expandableIds = computed(() =>
+  rows.value.filter((r) => r.hasChildren).map((r) => r.node.session.id),
+)
+
+function isExpanded(id: string) {
+  return expanded.value.includes(id)
+}
+
+function toggleExpand(id: string) {
+  expanded.value = isExpanded(id)
+    ? expanded.value.filter((value) => value !== id)
+    : [...expanded.value, id]
+}
+
+function expandAll() {
+  const ids = new Set(expanded.value)
+  for (const row of rows.value) if (row.hasChildren) ids.add(row.node.session.id)
+  expanded.value = [...ids]
+}
+
+function collapseAll() {
+  expanded.value = []
+}
+
 function toggleOutcome(value: string) {
   outcomes.value = outcomes.value.includes(value)
     ? outcomes.value.filter((o) => o !== value)
     : [...outcomes.value, value]
 }
 
-function isLive(session: SessionSummary) {
-  return liveSessions.value.has(session.id)
+const OUTCOME_TONE: Record<string, string> = {
+  succeeded: 'ok',
+  failed: 'error',
+  interrupted: 'warn',
 }
 
 const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: boolean }> = [
@@ -94,12 +153,6 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
   { key: 'outcome', label: 'Outcome', cls: 'outcome' },
   { key: 'updated', label: 'Updated', cls: 'updated', right: true },
 ]
-
-const OUTCOME_TONE: Record<string, string> = {
-  succeeded: 'ok',
-  failed: 'error',
-  interrupted: 'warn',
-}
 </script>
 
 <template>
@@ -120,8 +173,7 @@ const OUTCOME_TONE: Record<string, string> = {
       </div>
 
       <span class="count mono">
-        {{ visible.length.toLocaleString('en-US') }} of
-        {{ sessions.length.toLocaleString('en-US') }}
+        {{ rows.length.toLocaleString('en-US') }} shown
       </span>
 
       <span class="spacer" />
@@ -136,6 +188,22 @@ const OUTCOME_TONE: Record<string, string> = {
         Live only
       </button>
 
+      <button
+        type="button"
+        class="chip"
+        :disabled="expandableIds.length === 0"
+        @click="expandAll"
+      >
+        Expand all
+      </button>
+      <button
+        type="button"
+        class="chip"
+        :disabled="expanded.length === 0"
+        @click="collapseAll"
+      >
+        Collapse all
+      </button>
       <button type="button" class="chip" @click="reload()">Refresh</button>
     </div>
 
@@ -146,7 +214,7 @@ const OUTCOME_TONE: Record<string, string> = {
           <button
             type="button"
             class="reset"
-            :disabled="outcomes.length === 0 && !liveOnly && search === ''"
+            :disabled="!filterActive"
             @click="outcomes = []; liveOnly = false; search = ''"
           >
             Reset
@@ -174,8 +242,9 @@ const OUTCOME_TONE: Record<string, string> = {
         </section>
 
         <p class="note">
-          Live badges come from the event stream, filtered on the session id.
-          Sessions below are polled, so the list can lag a live event by seconds.
+          Subagent sessions are nested under the session that spawned them. Live
+          badges come from the event stream; the list itself is polled, so it can
+          lag an event by seconds.
         </p>
       </aside>
 
@@ -189,8 +258,13 @@ const OUTCOME_TONE: Record<string, string> = {
           </div>
           <span class="vrule" />
           <div class="stat">
-            <span class="stat-value mono">{{ formatCount(sessions.length) }}</span>
+            <span class="stat-value mono">{{ formatCount(roots.length) }}</span>
             <span class="stat-label">Sessions</span>
+          </div>
+          <span class="vrule" />
+          <div class="stat">
+            <span class="stat-value mono">{{ formatCount(subagentCount) }}</span>
+            <span class="stat-label">Subagents</span>
           </div>
           <span class="vrule" />
           <div class="stat">
@@ -206,42 +280,39 @@ const OUTCOME_TONE: Record<string, string> = {
 
         <div class="columns">
           <span class="col marker" aria-hidden="true" />
-          <span
-            v-for="column in COLUMNS"
-            :key="column.key"
-            class="col"
-            :class="[column.cls, { right: column.right }]"
-          >
-            <button
-              type="button"
-              class="sort"
-              :class="{ 'is-active': sortKey === column.key }"
-              :aria-sort="
-                sortKey === column.key
-                  ? sortDirection === 'asc'
-                    ? 'ascending'
-                    : 'descending'
-                  : 'none'
-              "
-              :title="`Sort by ${column.label.toLowerCase()}`"
-              @click="toggleSort(column.key)"
+          <div class="col-link">
+            <span
+              v-for="column in COLUMNS"
+              :key="column.key"
+              class="col"
+              :class="[column.cls, { right: column.right }]"
             >
-              <span>{{ column.label }}</span>
-              <svg
-                v-if="sortKey === column.key"
-                width="10"
-                height="10"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+              <button
+                type="button"
+                class="sort"
+                :class="{ 'is-active': sortKey === column.key }"
+                :aria-sort="
+                  sortKey === column.key
+                    ? sortDirection === 'asc'
+                      ? 'ascending'
+                      : 'descending'
+                    : 'none'
+                "
+                :title="`Sort by ${column.label.toLowerCase()}`"
+                @click="toggleSort(column.key)"
               >
-                <path :d="sortDirection === 'asc' ? 'M8 12.5 8 3.5M4 7 8 3l4 4' : 'M8 3.5 8 12.5M4 9l4 4 4-4'" />
-              </svg>
-            </button>
-          </span>
+                <span>{{ column.label }}</span>
+                <svg
+                  v-if="sortKey === column.key"
+                  width="10" height="10" viewBox="0 0 16 16" fill="none"
+                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path :d="sortDirection === 'asc' ? 'M8 12.5 8 3.5M4 7 8 3l4 4' : 'M8 3.5 8 12.5M4 9l4 4 4-4'" />
+                </svg>
+              </button>
+            </span>
+          </div>
         </div>
 
         <div class="list">
@@ -254,39 +325,79 @@ const OUTCOME_TONE: Record<string, string> = {
             </p>
           </div>
 
-          <p v-else-if="visible.length === 0" class="message">
+          <p v-else-if="rows.length === 0" class="message">
             <template v-if="sessions.length === 0">No sessions yet.</template>
             <template v-else>No sessions match these filters.</template>
           </p>
 
-          <NuxtLink
-            v-for="session in visible"
+          <div
+            v-for="entry in rows"
             v-else
-            :key="session.id"
-            :to="`/sessions/${session.id}`"
+            :key="entry.node.session.id"
             class="row"
+            :class="{ 'is-child': entry.node.depth > 0 }"
           >
+            <span v-if="entry.node.depth > 0" class="thread" :style="{ left: `${16 + (entry.node.depth - 1) * 14 + 6}px` }" />
+
             <span class="cell marker">
-              <span v-if="isLive(session)" class="live-dot is-on" />
-            </span>
-            <span class="cell title">{{ session.title }}</span>
-            <span class="cell dir mono">{{ session.directory ?? '—' }}</span>
-            <span class="cell model mono">{{ session.model?.id ?? '—' }}</span>
-            <span class="cell agent">{{ session.agent ?? '—' }}</span>
-            <span class="cell cost mono">{{ formatCost(session.cost) }}</span>
-            <span class="cell tokens mono">{{
-              formatTokens(billableTokens(session.tokens))
-            }}</span>
-            <span class="cell outcome">
-              <span
-                class="outcome-chip"
-                :class="`tone-${OUTCOME_TONE[session.outcome ?? ''] ?? 'neutral'}`"
+              <button
+                v-if="entry.hasChildren"
+                type="button"
+                class="toggle"
+                :aria-expanded="entry.expanded"
+                :title="entry.expanded ? 'Collapse subagents' : 'Expand subagents'"
+                @click="toggleExpand(entry.node.session.id)"
               >
-                {{ session.outcome ?? 'unknown' }}
-              </span>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+                  :stroke="entry.expanded ? 'var(--color-accent)' : 'var(--color-text-muted)'"
+                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path :d="entry.expanded ? 'M3.5 6 8 10.5 12.5 6' : 'M6 3.5 10.5 8 6 12.5'" />
+                </svg>
+              </button>
+              <span v-else class="toggle-spacer" />
+              <span
+                v-if="liveSessions.has(entry.node.session.id)"
+                class="live-dot is-on"
+                :title="`Active ${formatRelative(liveSessions.get(entry.node.session.id), now)} ago`"
+              />
             </span>
-            <span class="cell updated mono">{{ formatRelative(session.updated, now) }}</span>
-          </NuxtLink>
+
+            <NuxtLink
+              :to="`/sessions/${entry.node.session.id}`"
+              class="row-link"
+              :style="{ paddingLeft: `${entry.node.depth * 14}px` }"
+            >
+              <span class="cell title">
+                <span class="title-text">{{ entry.node.session.title }}</span>
+                <span
+                  v-if="entry.hasChildren"
+                  class="child-badge mono"
+                  :title="`${entry.descendants} subagent${entry.descendants === 1 ? '' : 's'}`"
+                >
+                  {{ entry.descendants }}
+                  <template v-if="entry.liveDescendants > 0">· {{ entry.liveDescendants }} live</template>
+                </span>
+              </span>
+              <span class="cell dir mono">{{ entry.node.session.directory ?? '—' }}</span>
+              <span class="cell model mono">{{ entry.node.session.model?.id ?? '—' }}</span>
+              <span class="cell agent">{{ entry.node.session.agent ?? '—' }}</span>
+              <span class="cell cost mono">{{ formatCost(entry.node.session.cost) }}</span>
+              <span class="cell tokens mono">{{
+                formatTokens(billableTokens(entry.node.session.tokens))
+              }}</span>
+              <span class="cell outcome">
+                <span
+                  class="outcome-chip"
+                  :class="`tone-${OUTCOME_TONE[entry.node.session.outcome ?? ''] ?? 'neutral'}`"
+                >
+                  {{ entry.node.session.outcome ?? 'unknown' }}
+                </span>
+              </span>
+              <span class="cell updated mono">{{
+                formatRelative(entry.node.session.updated, now)
+              }}</span>
+            </NuxtLink>
+          </div>
         </div>
       </main>
     </div>
@@ -324,7 +435,7 @@ const OUTCOME_TONE: Record<string, string> = {
   border-radius: var(--radius-sm);
   flex: 1;
   min-width: 0;
-  max-width: 460px;
+  max-width: 420px;
 }
 
 .search-input {
@@ -362,6 +473,16 @@ const OUTCOME_TONE: Record<string, string> = {
   white-space: nowrap;
 }
 
+.chip:disabled {
+  color: var(--color-text-faint);
+  cursor: default;
+}
+
+.chip:not(:disabled):hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
 .chip.is-on {
   background-color: var(--color-accent-bg);
   border-color: var(--color-accent-dim);
@@ -371,6 +492,7 @@ const OUTCOME_TONE: Record<string, string> = {
 .live-dot {
   width: 6px;
   height: 6px;
+  flex-shrink: 0;
   border-radius: var(--radius-full);
   background-color: var(--color-text-faint);
 }
@@ -505,7 +627,7 @@ const OUTCOME_TONE: Record<string, string> = {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
   height: 78px;
   flex-shrink: 0;
   padding: 0 16px;
@@ -545,19 +667,25 @@ const OUTCOME_TONE: Record<string, string> = {
   background-color: var(--color-border);
 }
 
-.columns,
-.row {
+/* The header mirrors a row: a fixed marker lane, then the link's own lanes. */
+.columns {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 12px;
-  padding: 0 16px;
-}
-
-.columns {
   height: 30px;
   flex-shrink: 0;
+  padding: 0 16px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.col-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .col {
@@ -568,7 +696,6 @@ const OUTCOME_TONE: Record<string, string> = {
   color: var(--color-text-muted);
 }
 
-/* The lane widths stay on the cell, so the button inside cannot shift them. */
 .sort {
   display: flex;
   flex-direction: row;
@@ -595,8 +722,13 @@ const OUTCOME_TONE: Record<string, string> = {
 }
 
 .marker {
-  width: 10px;
+  width: 26px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
+
 .title {
   flex: 1;
   min-width: 160px;
@@ -633,12 +765,50 @@ const OUTCOME_TONE: Record<string, string> = {
 }
 
 .row {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
   height: 40px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--color-divider);
+}
+
+/* A vertical rule joins a child to the parent it hangs from. */
+.thread {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--color-border);
 }
 
 .row:hover {
   background-color: var(--color-surface);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.toggle-spacer {
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.row-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .cell {
@@ -649,10 +819,41 @@ const OUTCOME_TONE: Record<string, string> = {
   text-overflow: ellipsis;
 }
 
-.row .cell.title {
+.cell.title {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.title-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-weight: var(--font-weight-medium);
   color: var(--color-text);
+}
+
+/* A collapsed parent still says how much sits under it. */
+.child-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 15px;
+  padding: 1px 6px;
+  color: var(--color-text-muted);
+  background-color: var(--color-raised);
+  border-radius: var(--radius-xs);
+}
+
+.row.is-child .title-text {
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-secondary);
+}
+
+.row.is-child .cell.dir {
+  color: var(--color-text-muted);
 }
 
 .row .cell.dir,

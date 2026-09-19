@@ -22,6 +22,7 @@ function stringOrUndefined(value: unknown): string | undefined {
 
 interface RawSession {
   id?: unknown
+  parentID?: unknown
   title?: unknown
   agent?: unknown
   model?: { id?: unknown; providerID?: unknown; variant?: unknown } | null
@@ -43,6 +44,7 @@ export function normalizeSession(raw: unknown): SessionSummary | null {
 
   return {
     id,
+    parentID: stringOrUndefined(session.parentID),
     title: stringOrUndefined(session.title) ?? 'Untitled session',
     directory: stringOrUndefined(session.location?.directory),
     agent: stringOrUndefined(session.agent),
