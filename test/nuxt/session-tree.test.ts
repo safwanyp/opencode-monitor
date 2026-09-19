@@ -188,6 +188,42 @@ describe('flattenSessionTree', () => {
     expect(rows[0]!.liveDescendants).toBe(1)
   })
 
+  it('aggregates tokens across the subtree too', () => {
+    const sessions = [
+      s('root', undefined, { tokens: { input: 100, output: 0 } }),
+      s('child', 'root', { tokens: { input: 200, output: 50 } }),
+    ]
+    const rows = flattenSessionTree(buildSessionTree(sessions), options([]))
+    expect(rows[0]!.subtreeTokens).toBe(350)
+  })
+
+  it('makes the root totals additive with the header total', () => {
+    // This is the property that decided the design: a parent row showing only
+    // its own cost would not sum to the figure in the summary strip.
+    const sessions = [
+      s('root', undefined, { cost: 1 }),
+      s('child', 'root', { cost: 2 }),
+      s('grandchild', 'child', { cost: 3 }),
+      s('other-root', undefined, { cost: 4 }),
+    ]
+    const rows = flattenSessionTree(buildSessionTree(sessions), options([]))
+    const rootTotal = rows
+      .filter((row) => row.node.depth === 0)
+      .reduce((sum, row) => sum + row.subtreeCost, 0)
+    const everything = sessions.reduce((sum, x) => sum + (x.cost ?? 0), 0)
+
+    expect(rootTotal).toBe(everything)
+    expect(rootTotal).toBe(10)
+  })
+
+  it('reports the subtree total for a collapsed parent', () => {
+    // The collapsed case is the one that was understating spend.
+    const rows = flattenSessionTree(buildSessionTree(family()), options([]))
+    expect(rows[0]!.expanded).toBe(false)
+    expect(rows[0]!.subtreeCost).toBeCloseTo(4.5, 5)
+    expect(rows[0]!.node.session.cost).toBe(1)
+  })
+
   it('reports no children for a leaf', () => {
     const rows = flattenSessionTree(buildSessionTree([s('solo')]), options([]))
     expect(rows[0]!.hasChildren).toBe(false)

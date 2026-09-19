@@ -14,6 +14,7 @@ import {
   sortSessionTree,
 } from '~/composables/useSessionTree'
 import type { SessionSortKey } from '~/composables/useSessionSort'
+import type { FlatSessionRow } from '~/composables/useSessionTree'
 
 const { sessions, error, loading, reload } = useSessions()
 const { liveSessions, connection } = useEventStream()
@@ -135,6 +136,22 @@ function toggleOutcome(value: string) {
   outcomes.value = outcomes.value.includes(value)
     ? outcomes.value.filter((o) => o !== value)
     : [...outcomes.value, value]
+}
+
+/**
+ * A parent row shows the whole subtree, so the tooltip has to say so — otherwise
+ * the number silently differs in meaning between rows.
+ */
+function costHint(entry: FlatSessionRow): string {
+  const own = entry.node.session.cost ?? 0
+  if (!entry.hasChildren || entry.subtreeCost === own) return ''
+  return `This session ${formatCost(own)} · subagents ${formatCost(entry.subtreeCost - own)}`
+}
+
+function tokenHint(entry: FlatSessionRow): string {
+  const own = billableTokens(entry.node.session.tokens) ?? 0
+  if (!entry.hasChildren || entry.subtreeTokens === own) return ''
+  return `This session ${formatTokens(own)} · subagents ${formatTokens(entry.subtreeTokens - own)}`
 }
 
 const OUTCOME_TONE: Record<string, string> = {
@@ -381,9 +398,23 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
               <span class="cell dir mono">{{ entry.node.session.directory ?? '—' }}</span>
               <span class="cell model mono">{{ entry.node.session.model?.id ?? '—' }}</span>
               <span class="cell agent">{{ entry.node.session.agent ?? '—' }}</span>
-              <span class="cell cost mono">{{ formatCost(entry.node.session.cost) }}</span>
-              <span class="cell tokens mono">{{
-                formatTokens(billableTokens(entry.node.session.tokens))
+              <span
+                class="cell cost mono"
+                :class="{ 'is-subtree': entry.hasChildren }"
+                :title="costHint(entry)"
+              >{{
+                entry.hasChildren
+                  ? formatCost(entry.subtreeCost)
+                  : formatCost(entry.node.session.cost)
+              }}</span>
+              <span
+                class="cell tokens mono"
+                :class="{ 'is-subtree': entry.hasChildren }"
+                :title="tokenHint(entry)"
+              >{{
+                entry.hasChildren
+                  ? formatTokens(entry.subtreeTokens)
+                  : formatTokens(billableTokens(entry.node.session.tokens))
               }}</span>
               <span class="cell outcome">
                 <span
@@ -872,9 +903,19 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
   color: var(--color-text-secondary);
 }
 
+/* An aggregate across the subtree, not this row alone. Brighter, because it is
+   the number that matters when the row is collapsed. */
+.row .cell.cost.is-subtree {
+  color: var(--color-text);
+}
+
 .row .cell.tokens {
   font-size: 11px;
   color: var(--color-text-muted);
+}
+
+.row .cell.tokens.is-subtree {
+  color: var(--color-text-secondary);
 }
 
 .row .cell.updated {

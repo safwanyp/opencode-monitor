@@ -1,4 +1,5 @@
 import type { SessionSummary } from '#shared/types/events'
+import { billableTokens } from '#shared/utils/format'
 
 import type { SessionSortKey, SortDirection } from './useSessionSort'
 import { sortSessions } from './useSessionSort'
@@ -118,7 +119,15 @@ export interface FlatSessionRow {
   expanded: boolean
   /** Aggregate across the subtree, so a collapsed parent still says something. */
   descendants: number
+  /**
+   * Cost and tokens for the whole subtree, including this session.
+   *
+   * Shown in place of the session's own figures whenever it has children: a
+   * parent that spawned 64 subagents reads as cheap next to its children
+   * otherwise, and the column stops being additive with the header total.
+   */
   subtreeCost: number
+  subtreeTokens: number
   liveDescendants: number
 }
 
@@ -154,6 +163,10 @@ export function flattenSessionTree(
         expanded,
         descendants: countDescendants(node),
         subtreeCost: subtree.reduce((sum, s) => sum + (s.session.cost ?? 0), 0),
+        subtreeTokens: subtree.reduce(
+          (sum, s) => sum + (billableTokens(s.session.tokens) ?? 0),
+          0,
+        ),
         liveDescendants: subtree.filter((s) => options.liveSessions.has(s.session.id)).length,
       })
 
