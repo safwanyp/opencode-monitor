@@ -191,9 +191,17 @@ consumed by both sides. `shared/` may not import Vue or Nitro code.
   regardless. Removes hydration surface. Nitro still runs as the BFF in SPA mode.
 - **`nitro.preset: 'node-server'`** — the app is inherently stateful (ring buffers, `fs.watch`,
   an upstream SSE connection). Explicitly non-deployable to serverless/edge.
-- **`HOST=127.0.0.1`** — **required override.** Nitro defaults to `0.0.0.0`, which would violate
-  the local-only invariant.
-- **`PORT`** — choose something distinct from OpenCode's own port (e.g. `4321`).
+- **`HOST=127.0.0.1`** — **required override.** Nitro defaults to a wildcard address, which would
+  violate the local-only invariant.
+- **The built server does not read `.env`.** Nitro's node-server takes `HOST`/`PORT` from the
+  process environment only. Running `node .output/server/index.mjs` directly therefore binds a
+  wildcard address on port 3000 — verified, not assumed. Start it with `pnpm start`, which passes
+  `--env-file-if-exists=.env`.
+- **A startup guard refuses to bind anything but loopback.** `server/plugins/bind-guard.ts` exits
+  with an actionable message rather than letting a misconfiguration expose the app to the network.
+  It is skipped in dev, where the bind address comes from `devServer.host`.
+- **`PORT`** — choose something distinct from OpenCode's own port (e.g. `4321`). Nuxt silently
+  falls back to the next free port if it is taken, so check which port is actually in use.
 - **Background readers as module-level singletons** in `server/plugins/readers.ts`, guarded on
   `globalThis`. Nitro plugins can re-run on dev reload; without the guard you spawn duplicate
   watchers and duplicate upstream connections, which presents as mystery duplicate rows.
@@ -205,12 +213,17 @@ consumed by both sides. `shared/` may not import Vue or Nitro code.
 Build and run:
 
 ```sh
-nuxt build
-node .output/server/index.mjs
+pnpm build
+pnpm start          # loads .env, so HOST=127.0.0.1 and PORT=4321 apply
 ```
 
+Running `node .output/server/index.mjs` by hand is not equivalent — it skips the env file and the
+startup guard will refuse it.
+
 **Dev caveat:** HMR restarts drop in-memory buffers and the upstream connection. Expected; not a
-design flaw.
+design flaw. In practice a server-file edit restarts the whole Nitro worker, so the reader
+re-primes its 2 MB window. This is dev-only: a built server has no watcher, so the reader starts
+exactly once and the buffer is never rebuilt.
 
 ---
 

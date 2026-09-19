@@ -17,6 +17,9 @@ single highest-risk component and the definition of done depends on it.
 - Every phase ends with a verification command that can be run from a clean checkout.
 - TypeScript is pinned to 5.x. The registry ships 7.x, but `vue-tsc` loads `typescript/lib/tsc`,
   which TypeScript 7 no longer exports, so it crashes on startup and SFC typechecking is lost.
+- Run the built app with `pnpm start`, never `node .output/server/index.mjs`. Nitro's node-server
+  does not read `.env`, so the bare command binds a wildcard address; `server/plugins/bind-guard.ts`
+  refuses it, but `pnpm start` is the supported path.
 - Verify with `pnpm test`, `pnpm typecheck` and `pnpm verify:logfmt <log>`. The typecheck
   runs two passes: `nuxt typecheck` for app/server, and `tsconfig.tools.json` for `shared/`,
   `scripts/` and `test/`, which no generated Nuxt tsconfig covers.
@@ -254,8 +257,12 @@ defaults to on.
 **Verification**
 ```sh
 grep -rnE 'method:\s*.(POST|PUT|PATCH|DELETE)' server/ | grep -i opencode   # expect no hits
-pnpm build && node .output/server/index.mjs
+pnpm build && pnpm start
+# expect the loopback address and no wildcard socket
 lsof -nP -iTCP:4321 -sTCP:LISTEN | grep -q '127.0.0.1:4321'
+lsof -nP -iTCP -sTCP:LISTEN | grep -qE '\*:4321|0\.0\.0\.0:4321' && exit 1
+# and the naive invocation must refuse rather than bind a wildcard
+env -u HOST -u PORT node .output/server/index.mjs; test $? -eq 1
 node ... scripts/verify-logfmt.ts ~/.local/share/opencode/log/opencode.log
 ```
 
