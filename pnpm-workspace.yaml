@@ -1,0 +1,11 @@
+# pnpm asks before running a dependency's install scripts. This records the answer.
+#
+# Until the decision is written down, pnpm 11 refuses to run *any* script in this
+# project — `pnpm test` and `pnpm typecheck` fail with ERR_PNPM_IGNORED_BUILDS,
+# not because anything is broken but because a decision is outstanding.
+#
+# esbuild is the only dependency in this tree with an install script. Its
+# postinstall links the platform binary; without it esbuild may resolve the wrong
+# binary path on some platforms.
+allowBuilds:
+  esbuild: true

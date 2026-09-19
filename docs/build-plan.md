@@ -17,9 +17,17 @@ single highest-risk component and the definition of done depends on it.
 - Every phase ends with a verification command that can be run from a clean checkout.
 - TypeScript is pinned to 5.x. The registry ships 7.x, but `vue-tsc` loads `typescript/lib/tsc`,
   which TypeScript 7 no longer exports, so it crashes on startup and SFC typechecking is lost.
-- Verify with `npm test`, `npm run typecheck` and `npm run verify:logfmt -- <log>`. The typecheck
+- Verify with `pnpm test`, `pnpm typecheck` and `pnpm verify:logfmt <log>`. The typecheck
   runs two passes: `nuxt typecheck` for app/server, and `tsconfig.tools.json` for `shared/`,
   `scripts/` and `test/`, which no generated Nuxt tsconfig covers.
+- pnpm is the package manager (`packageManager` is pinned in `package.json`). Two gotchas:
+  - pnpm forwards a literal `--` to scripts where npm strips it, so prefer `pnpm <script> <args>`.
+  - `pnpm-workspace.yaml` records the one build-script decision (`esbuild`). Until it is recorded,
+    pnpm 11 refuses to run *any* script here — `pnpm test` fails with `ERR_PNPM_IGNORED_BUILDS`
+    without stating that the real cause is an outstanding decision.
+- `@types/node` is pinned to an exact version, not a caret. The registry enforces a minimum release
+  age, and a caret range resolves to a version published inside that window, which the policy
+  rejects. Do not "tidy" the pin back into a range.
 
 ---
 
@@ -43,7 +51,7 @@ single highest-risk component and the definition of done depends on it.
 
 **Verification**
 ```sh
-npm run dev
+pnpm dev
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4321/          # expect 200
 lsof -nP -iTCP:4321 -sTCP:LISTEN | grep -q '127.0.0.1:4321'                # expect bind on loopback only
 ```
@@ -70,7 +78,7 @@ lsof -nP -iTCP:4321 -sTCP:LISTEN | grep -q '127.0.0.1:4321'                # exp
 4. **Full-file verification harness** (the definition of done):
    ```sh
    # parse every line of the live log, report failure count
-   npm run verify:logfmt -- ~/.local/share/opencode/log/opencode.log
+   pnpm verify:logfmt ~/.local/share/opencode/log/opencode.log
    # equivalent, and portable: node scripts/verify-logfmt.ts <log>
    # (Node >= 23.6 strips types by default; --experimental-strip-types also works)
    ```
@@ -78,8 +86,8 @@ lsof -nP -iTCP:4321 -sTCP:LISTEN | grep -q '127.0.0.1:4321'                # exp
 
 **Verification**
 ```sh
-npm test                                   # unit fixtures pass
-npm run verify:logfmt -- ~/.local/share/opencode/log/opencode.log   # failed === 0
+pnpm test                                   # unit fixtures pass
+pnpm verify:logfmt ~/.local/share/opencode/log/opencode.log   # failed === 0
 ```
 Run it against `opencode.log`. Rotated archives are **not** a valid target: all 11 are a legacy
 console format, not logfmt (design §2.1), and parsing them is out of scope. The parser must not be
@@ -246,7 +254,7 @@ defaults to on.
 **Verification**
 ```sh
 grep -rnE 'method:\s*.(POST|PUT|PATCH|DELETE)' server/ | grep -i opencode   # expect no hits
-npm run build && node .output/server/index.mjs
+pnpm build && node .output/server/index.mjs
 lsof -nP -iTCP:4321 -sTCP:LISTEN | grep -q '127.0.0.1:4321'
 node ... scripts/verify-logfmt.ts ~/.local/share/opencode/log/opencode.log
 ```

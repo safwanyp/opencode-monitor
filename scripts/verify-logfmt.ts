@@ -199,9 +199,19 @@ function parseArgs(argv: string[]): Options {
   const files: string[] = []
   let maxFailures = DEFAULT_MAX_FAILURES
   let top = DEFAULT_TOP
+  let endOfOptions = false
 
   for (const arg of argv) {
-    if (arg.startsWith('--max-failures=')) {
+    // A bare `--` ends option parsing, per POSIX. npm strips it, pnpm forwards
+    // it, so accepting it is what makes the same invocation work under both.
+    if (!endOfOptions && arg === '--') {
+      endOfOptions = true
+      continue
+    }
+
+    if (endOfOptions) {
+      files.push(arg)
+    } else if (arg.startsWith('--max-failures=')) {
       maxFailures = Number(arg.slice('--max-failures='.length)) || DEFAULT_MAX_FAILURES
     } else if (arg.startsWith('--top=')) {
       top = Number(arg.slice('--top='.length)) || DEFAULT_TOP
