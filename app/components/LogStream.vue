@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { LogRow } from '~/composables/useLogStream'
+import { createDayCursor } from '#shared/utils/format'
 
 const props = defineProps<{
   rows: LogRow[]
@@ -19,6 +20,31 @@ const ROW_HEIGHT = 32
 
 const headerRef = ref<HTMLElement | null>(null)
 
+type StreamItem =
+  | { kind: 'row'; key: string; row: LogRow }
+  | { kind: 'day'; key: string; label: string }
+
+/**
+ * Rows, with a separator wherever the calendar day changes.
+ *
+ * A bare `HH:MM:SS` column cannot distinguish two days, and the retained window
+ * spans several once the log is quiet — the file itself already holds seven
+ * dates. The separator is the same height as a row, so the list stays uniform
+ * and the virtualiser is unaffected.
+ */
+const items = computed<StreamItem[]>(() => {
+  const out: StreamItem[] = []
+  const nextMarker = createDayCursor()
+
+  for (const row of props.rows) {
+    const marker = nextMarker(row.record.ts)
+    if (marker) out.push(marker)
+    out.push({ kind: 'row', key: `row:${row.seq}`, row })
+  }
+
+  return out
+})
+
 const {
   scroller,
   totalHeight,
@@ -29,14 +55,14 @@ const {
   isAtBottom,
   scrollToBottom,
 } = useVirtualRows({
-  count: () => props.rows.length,
+  count: () => items.value.length,
   rowHeight: ROW_HEIGHT,
   // The header lives inside the scroller so it shares the rows' width exactly;
   // the window maths therefore has to skip its height.
   leadingOffset: () => headerRef.value?.offsetHeight ?? 0,
 })
 
-const window = computed(() => props.rows.slice(startIndex.value, endIndex.value))
+const window = computed(() => items.value.slice(startIndex.value, endIndex.value))
 
 /**
  * The first fill jumps to the newest record unconditionally.
@@ -107,13 +133,20 @@ function onUserScroll() {
 
       <div class="sizer" :style="{ height: `${totalHeight}px` }">
         <div class="window" :style="{ transform: `translateY(${offsetY}px)` }">
-          <LogRow
-            v-for="row in window"
-            :key="row.seq"
-            :row="row"
-            :selected="row.seq === selectedSeq"
-            @select="emit('select', $event)"
-          />
+          <template v-for="item in window" :key="item.key">
+            <div v-if="item.kind === 'day'" class="day">
+              <span class="day-rule" />
+              <span class="day-label mono">{{ item.label }}</span>
+              <span class="day-rule" />
+            </div>
+
+            <LogRow
+              v-else
+              :row="item.row"
+              :selected="item.row.seq === selectedSeq"
+              @select="emit('select', $event)"
+            />
+          </template>
         </div>
       </div>
     </div>
@@ -194,6 +227,31 @@ function onUserScroll() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* A day separator at row height, so the list stays uniform for the virtualiser. */
+.day {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  height: var(--row-height);
+  flex-shrink: 0;
+  padding: 0 var(--row-padding-inline);
+}
+
+.day-rule {
+  flex: 1;
+  height: 1px;
+  background-color: var(--color-border);
+}
+
+.day-label {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  color: var(--color-text-muted);
 }
 
 .sizer {

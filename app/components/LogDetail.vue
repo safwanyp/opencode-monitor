@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { LogRecord } from '#shared/types/records'
 import { redactRecord } from '#shared/utils/redaction'
+import { formatDateTime } from '#shared/utils/format'
 
 import type { LogRow } from '~/composables/useLogStream'
 
@@ -54,14 +55,12 @@ const levelTone: Record<string, string> = {
   DEBUG: 'debug',
 }
 
-const time = computed(() => {
-  if (!record.value) return ''
-  const at = Date.parse(record.value.ts)
-  if (!Number.isFinite(at)) return record.value.ts
-  const d = new Date(at)
-  const pad = (n: number, w = 2) => String(n).padStart(w, '0')
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
-})
+/**
+ * Full date and time here, not just the clock. The list can span several days,
+ * and a bare `HH:MM:SS` in the detail view would be the one place a user cannot
+ * tell which day they are looking at.
+ */
+const time = computed(() => formatDateTime(record.value?.ts))
 
 /** JSON-looking values are the ones worth pretty-printing. */
 function prettyJson(value: string): string | null {

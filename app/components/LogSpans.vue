@@ -2,6 +2,7 @@
 import type { LogRow } from '~/composables/useLogStream'
 import type { SpanGroup } from '~/composables/useLogViews'
 import { buildSpanItems, summariseSpans } from '~/composables/useLogViews'
+import { createDayCursor } from '#shared/utils/format'
 
 const props = defineProps<{
   rows: LogRow[]
@@ -16,7 +17,25 @@ const expanded = ref(new Set<string>())
 
 const groups = computed(() => groupSpans(props.rows))
 const summary = computed(() => summariseSpans(groups.value))
-const items = computed(() => buildSpanItems(groups.value, expanded.value))
+type ViewItem =
+  | ReturnType<typeof buildSpanItems>[number]
+  | { kind: 'day'; key: string; label: string }
+
+/** A span's day is its first line's day. */
+const items = computed<ViewItem[]>(() => {
+  const out: ViewItem[] = []
+  const nextMarker = createDayCursor()
+
+  for (const item of buildSpanItems(groups.value, expanded.value)) {
+    if (item.kind === 'group') {
+      const marker = nextMarker(item.group.firstTs)
+      if (marker) out.push(marker)
+    }
+    out.push(item)
+  }
+
+  return out
+})
 
 const { scroller, totalHeight, startIndex, endIndex, offsetY, onScroll, isAtBottom, scrollToBottom } =
   useVirtualRows({ count: () => items.value.length, rowHeight: ROW_HEIGHT })
@@ -107,8 +126,14 @@ function describe(group: SpanGroup): string {
       <div class="sizer" :style="{ height: `${totalHeight}px` }">
         <div class="window" :style="{ transform: `translateY(${offsetY}px)` }">
           <template v-for="item in window" :key="item.key">
+            <div v-if="item.kind === 'day'" class="day">
+              <span class="day-rule" />
+              <span class="day-label mono">{{ item.label }}</span>
+              <span class="day-rule" />
+            </div>
+
             <button
-              v-if="item.kind === 'group'"
+              v-else-if="item.kind === 'group'"
               type="button"
               class="row group-row"
               :class="[`tone-${tone(item.group.level)}`, { 'is-open': expanded.has(item.group.key) }]"
@@ -265,6 +290,31 @@ function describe(group: SpanGroup): string {
 .col.lines {
   width: 46px;
   text-align: right;
+}
+
+/* Day separator, at row height so the list stays uniform. */
+.day {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  height: var(--row-height);
+  flex-shrink: 0;
+  padding: 0 var(--row-padding-inline);
+}
+
+.day-rule {
+  flex: 1;
+  height: 1px;
+  background-color: var(--color-border);
+}
+
+.day-label {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  color: var(--color-text-muted);
 }
 
 .scroller {

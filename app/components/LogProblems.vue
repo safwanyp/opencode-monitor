@@ -2,6 +2,7 @@
 import type { LogRow } from '~/composables/useLogStream'
 import type { ProblemGrouping } from '~/composables/useLogViews'
 import { buildProblemItems, groupProblems } from '~/composables/useLogViews'
+import { createDayCursor } from '#shared/utils/format'
 
 const props = defineProps<{
   rows: LogRow[]
@@ -27,7 +28,25 @@ const GROUPINGS: Array<{ value: ProblemGrouping; label: string }> = [
 const allGroups = computed(() => groupProblems(props.rows, grouping.value))
 const groups = computed(() => allGroups.value.slice(0, MAX_GROUPS))
 const hidden = computed(() => Math.max(0, allGroups.value.length - MAX_GROUPS))
-const items = computed(() => buildProblemItems(groups.value, expanded.value))
+type ViewItem =
+  | ReturnType<typeof buildProblemItems>[number]
+  | { kind: 'day'; key: string; label: string }
+
+/** A problem's day is its last occurrence, since that is what the row shows. */
+const items = computed<ViewItem[]>(() => {
+  const out: ViewItem[] = []
+  const nextMarker = createDayCursor()
+
+  for (const item of buildProblemItems(groups.value, expanded.value)) {
+    if (item.kind === 'group') {
+      const marker = nextMarker(item.group.lastTs)
+      if (marker) out.push(marker)
+    }
+    out.push(item)
+  }
+
+  return out
+})
 
 const counts = computed(() => {
   let errors = 0
@@ -111,8 +130,14 @@ const tone = (level: string) => level.toLowerCase()
       </p>
 
       <template v-for="item in items" :key="item.key">
+        <div v-if="item.kind === 'day'" class="day">
+          <span class="day-rule" />
+          <span class="day-label mono">{{ item.label }}</span>
+          <span class="day-rule" />
+        </div>
+
         <div
-          v-if="item.kind === 'group'"
+          v-else-if="item.kind === 'group'"
           class="problem"
           :class="`tone-${tone(item.group.level)}`"
           :style="{ backgroundColor: expanded.has(item.group.key) ? 'var(--color-surface)' : undefined }"
@@ -271,6 +296,31 @@ const tone = (level: string) => level.toLowerCase()
   padding: 16px;
   font-size: 12px;
   line-height: 18px;
+  color: var(--color-text-muted);
+}
+
+.day {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  background-color: var(--color-bg);
+}
+
+.day-rule {
+  flex: 1;
+  height: 1px;
+  background-color: var(--color-border);
+}
+
+.day-label {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-caps);
   color: var(--color-text-muted);
 }
 
