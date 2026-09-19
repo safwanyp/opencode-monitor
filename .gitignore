@@ -1,0 +1,16 @@
+# dependencies
+node_modules
+
+# nuxt build output
+.nuxt
+.output
+.data
+dist
+
+# local env — see .env.example
+.env
+.env.local
+
+# logs and OS noise
+*.log
+.DS_Store

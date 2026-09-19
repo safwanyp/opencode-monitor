@@ -1,0 +1,235 @@
+/* ==========================================================================
+   OpenCode Monitor — global stylesheet
+   Design tokens are the source of truth for colour, type, space and radius.
+   Everything else lives in scoped SFC blocks.
+   ========================================================================== */
+
+/* Self-hosted so the app never reaches for a network font — it is a local tool
+   and must look right offline. Latin subsets only. */
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-sans/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';
+
+:root {
+  color-scheme: dark;
+
+  /* --- surfaces ---------------------------------------------------------- */
+  --color-bg: #0c0f0e; /* app ground */
+  --color-surface: #111514; /* panels, rails, drawers */
+  --color-raised: #171c1a; /* inputs, hover, chips */
+  --color-overlay: #1d2321; /* selected row, highest surface */
+
+  /* --- lines ------------------------------------------------------------- */
+  --color-border: #212725; /* hairline: the primary structural device */
+  --color-border-strong: #2e3633;
+  --color-divider: #161b19; /* row separator, quieter than a border */
+
+  /* --- text -------------------------------------------------------------- */
+  --color-text: #e9e6de; /* bone, never pure white */
+  --color-text-secondary: #a7ada5;
+  --color-text-muted: #7e857e;
+  --color-text-faint: #565d58; /* decorative only — never content */
+
+  /* --- accent: oxidised copper ------------------------------------------- */
+  --color-accent: #57bfa4;
+  --color-accent-strong: #6fd3b7;
+  --color-accent-dim: #2e6b5d;
+  --color-accent-bg: #12211d;
+
+  /* --- severity: colour is reserved for meaning -------------------------- */
+  --color-warn: #d8a54c;
+  --color-warn-bg: #221b0f;
+  --color-error: #d2705a;
+  --color-error-bg: #23130f;
+  --color-success: var(--color-accent);
+
+  /* --- type -------------------------------------------------------------- */
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0em;
+  --tracking-caps: 0.08em;
+
+  --leading-tight: 16px;
+  --leading-snug: 18px;
+  --leading-normal: 20px;
+  --leading-relaxed: 24px;
+  --leading-loose: 32px;
+
+  /* --- radii ------------------------------------------------------------- */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* --- space ------------------------------------------------------------- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 40px;
+  --space-11: 48px;
+
+  /* --- layout ------------------------------------------------------------ */
+  --container-sm: 720px;
+  --container-lg: 1440px;
+  --header-height: 52px;
+  --toolbar-height: 46px;
+  --statusbar-height: 28px;
+}
+
+/* --- reset ---------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#__nuxt {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+svg {
+  display: block;
+}
+
+::selection {
+  background-color: var(--color-accent-dim);
+  color: var(--color-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-xs);
+}
+
+/* --- scrollbars ----------------------------------------------------------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-raised) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-raised);
+  border: 3px solid var(--color-bg);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-border-strong);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* --- shared primitives ---------------------------------------------------- */
+
+/* Values, timestamps, ids and counts. */
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Uppercase micro labels used for lane headers and section titles. */
+.label-caps {
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  color: var(--color-text-muted);
+}
+
+/* Truncating single-line text inside a flex lane. */
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

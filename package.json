@@ -1,0 +1,22 @@
+{
+  "name": "opencode-monitor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only local monitor for OpenCode's service logs and sessions",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "nuxt": "^4.5.2",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.1"
+  }
+}
