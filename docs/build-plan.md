@@ -283,13 +283,17 @@ If time is short, Phase 1 and Phase 4 are the two that decide whether the tool i
 1. **Virtualization library** — **decided: hand-rolled windowing.** Log rows are a fixed 32px by
    design, so the visible window is arithmetic rather than measurement. That removes a dependency
    and the class of bugs where a virtualiser measures wrong during a layout change.
-2. **"Load older" paging** — the client loads the whole *ring buffer*, not the whole file. Paging
-   backwards through the 39 MB file in chunks (design §6) is still unimplemented and is the next
-   thing to add when the buffer's 20k window feels too small.
-2. **Rotation trigger** — confirm whether OpenCode rotates on size or time; adjust the tailer if
-   needed (design §13 lists this as unverified). Every archive to date is legacy console format,
-   so do not assume a rotated file is logfmt: detect the format before parsing it.
-3. **`fs.watch` fallback** — add polling if macOS coalesces events under rapid writes.
-4. **Redaction implementation** — key-based at serialization time, or render-time masking.
-   Key-based is safer; decide before Phase 7.
-5. **Ring buffer sizing** — start at 20k records and measure memory.
+2. **"Load older" paging** — **still open.** The client loads the whole *ring buffer*, not the whole
+   file. Paging backwards through the 39 MB file in chunks (design §6) is unimplemented and is the
+   next thing to add when the buffer's 20k window feels too small.
+3. **Rotation trigger** — still unconfirmed, and now with a sharper edge: every archive to date is
+   legacy console format, so a rotated file must not be assumed to be logfmt. Detect before parsing.
+4. **`fs.watch` fallback** — **done.** A 250 ms poll runs alongside the watch. The interval is also
+   the worst-case detection latency when the watch drops an event, so it is a latency knob:
+   measured 12.8 ms median with the watch firing, and 317 ms end-to-end to an SSE client.
+5. **Redaction implementation** — **decided: render-time, key-based.** Nothing in the buffer is
+   mutated, so the toggle is instant and reversible in both explorers.
+6. **Ring buffer sizing** — **measured.** 20k log records and 5k events hold comfortably; the client
+   mirrors the log capacity and trims in chunks so trimming is not per-append.
+7. **Backfill shape** — the client pages the entire retained window rather than taking the newest
+   page, so the stream and the facet counts never describe different sets of records.

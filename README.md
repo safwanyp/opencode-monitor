@@ -12,9 +12,9 @@ Nothing in this app writes to OpenCode. It is a viewer.
 
 ## Status
 
-**Design frozen. Implementation in progress.** Phases 0–1 are complete: the Nuxt scaffold and the
-logfmt parser, which round-trips the live 39 MB log with zero parse failures. Server routes, the
-tailer and both explorer UIs are not built yet.
+**Implemented.** Both explorers are built and verified: the file-log explorer (stream, spans and
+problems) and the session explorer (list, transcript and live events). The logfmt parser
+round-trips the live log with zero parse failures — currently 149k lines and growing.
 
 ## Documents
 

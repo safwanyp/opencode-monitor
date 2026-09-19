@@ -35,7 +35,7 @@ the commands noted if behavior seems off.
 | Levels | 141,854 INFO · 3,214 WARN · 42 ERROR |
 | Roles | 102,048 `server` · 4,393 `cli` |
 | Noise | 5 messages ≈ 86% of volume (`spawning process` 51.7k, `watcher subscribe` 35.2k, `event` 27.5k, `watcher stopped` 5.4k, `watcher started` 5.4k) |
-| Correlation key | `http.span` — 13,122 distinct values |
+| Correlation key | `http.span`, but only unique **within a run** — group by `(run, span)` (§2.2) |
 | Process grouping | `run` (e.g. `0cc8cfa0`, `556d837a`) |
 | Auth | `Authorization: Basic opencode:<password>` → 200; unauth → 401 |
 | Password | `~/.config/opencode/service.json` (mode 0600, field `password`) |
@@ -46,6 +46,10 @@ the commands noted if behavior seems off.
 | **Overlap** | **none — zero shared event types** |
 | Session history | `GET /api/session/{id}/message` (non-experimental) — full transcript |
 | Session list | `GET /api/session` — cost, tokens, model, agent, directory, outcome |
+| Sessions shape | `{ data, cursor }`; each session carries `agent`, `model{id,providerID,variant}`, `cost`, `tokens{input,output,reasoning,cache}`, `outcome`, `time{created,updated}`, `location.directory` |
+| Transcript shape | `{ data, cursor }` with `cursor.previous`/`cursor.next`; `?limit=` honoured; messages are **newest-first**, so any chronological view must reverse them |
+| Message types | `user`, `assistant`, `idle`, `system`; content parts are `text`, `reasoning`, `tool` |
+| **`http.span` is not unique alone** | 43 of 896 distinct span values appear against more than one `run`. Group by `(run, span)`, never by span alone — see §2.2 |
 | **Not replayable** | session `/log?after=0` → only `{"type":"log.synced","seq":N}`; **no backfill** |
 | Seq | `durable.seq` orders the live stream; **resume only, not history** |
 
@@ -74,6 +78,21 @@ for f in ~/.local/share/opencode/log/*.log; do
   printf '%8s  %s\n' "$(grep -c '^timestamp=' "$f")" "$(basename "$f")"
 done
 ```
+
+### 2.2 `http.span` is only unique within a run
+
+Verified 2026-09-19 against the retained window. Of 896 distinct `http.span` values, **43 appear
+against more than one `run`**. The span values are small integers reused across process runs
+(`0`, `1`, `89`, `96`), so grouping on the span alone fuses a startup burst in one run with a
+config reload in another.
+
+**Consequence:** every span view, group and filter must key on `(run, span)`. The design's "group by
+`http.span`" is a simplification that only holds within a single run.
+
+Also measured, and worth knowing before designing around it: spans in this log are mostly *not*
+requests. Grouping by `(run, span)` over the live window gives 939 groups, of which 786 hold a
+single line and only 20 records in the whole buffer carry `http.method`. This is a startup and
+plugin log, so a span view has to be useful without pretending every span is an HTTP request.
 
 ### Sample lines
 
@@ -363,6 +382,7 @@ redaction toggle) · per-source health indicator.
 | Live transport | `fetch` + `ReadableStream` (not `EventSource` — auth header required) |
 | Noise | Mute-by-default heartbeat messages (5) |
 | Archives | Inventory only — legacy console format, never parsed (§2.1) |
+| Correlation | `(run, span)`, never the span alone | 43 of 896 span values appear in more than one run (§2.2) |
 | Virtualization | Hand-rolled fixed-height windowing | Rows are a fixed 32px, so the window is arithmetic rather than measurement; avoids a dependency and a virtualiser's config surface |
 | Client filtering | Entirely client-side | The retained window is at most 20k records and is already transferred; a round trip per keystroke would be slower and would decouple the filters from the data they describe |
 | Facets | Whole-buffer, computed server-side | A count over the fetched page would say almost nothing about the log; the facet panel describes the buffer, and the client decides presentation |
