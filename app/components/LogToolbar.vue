@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import type { LogView } from '~/composables/useLogView'
 import type { TimeRangeOption } from '~/composables/useLogFilters'
 import { TIME_RANGES } from '~/composables/useLogFilters'
 
 const props = defineProps<{
+  view: LogView
+  problemCount: number
+  /** Drives the badge tone: a WARN-only lane should not read as an error. */
+  problemHasError: boolean
   text: string
   rangeMs: number | null
   following: boolean
@@ -15,11 +20,18 @@ const props = defineProps<{
 // Emit names avoid colons: a quoted key containing `:` trips the SFC compiler's
 // type-literal parser ("Did not expect a type annotation here").
 const emit = defineEmits<{
+  setView: [value: LogView]
   search: [value: string]
   timeRange: [value: number | null]
   toggleFollow: []
   unmuteAll: []
 }>()
+
+const VIEWS: Array<{ value: LogView; label: string }> = [
+  { value: 'stream', label: 'Stream' },
+  { value: 'spans', label: 'Spans' },
+  { value: 'problems', label: 'Problems' },
+]
 
 const searchRef = ref<HTMLInputElement | null>(null)
 
@@ -51,6 +63,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="toolbar">
+    <div class="views" role="group" aria-label="Log view">
+      <button
+        v-for="option in VIEWS"
+        :key="option.value"
+        type="button"
+        class="view"
+        :class="{ 'is-active': view === option.value }"
+        @click="emit('setView', option.value)"
+      >
+        <span>{{ option.label }}</span>
+        <span
+          v-if="option.value === 'problems' && problemCount > 0"
+          class="view-badge mono"
+          :class="{ 'is-error': problemHasError }"
+        >{{
+          problemCount > 999 ? '999+' : problemCount
+        }}</span>
+      </button>
+    </div>
+
     <div class="search" :class="{ 'is-focused': false }">
       <svg
         width="13"
@@ -175,6 +207,52 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   padding: 0 16px;
   background-color: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
+}
+
+.views {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  flex-shrink: 0;
+  background-color: var(--color-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.view {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.view.is-active {
+  background-color: var(--color-overlay);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.view-badge {
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  background-color: var(--color-warn-bg);
+  color: var(--color-warn);
+  border-radius: var(--radius-xs);
+}
+
+.view-badge.is-error {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
 }
 
 .search {

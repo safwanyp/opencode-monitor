@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { LogRow } from '~/composables/useLogStream'
+import type { LogView } from '~/composables/useLogView'
 
 const stream = useLogStream()
 const filters = useLogFilters(stream.rows)
 const { facets } = useLogFacets()
+const view = useLogView()
 
 const selected = ref<LogRow | null>(null)
 
@@ -11,10 +13,19 @@ const selected = ref<LogRow | null>(null)
 const redaction = ref(false)
 
 const shownRows = computed(() => filters.visible.value)
-
 const mutedCount = computed(() => filters.muted.value.length)
-
 const connection = computed(() => stream.connection.value)
+
+/** Drives the Problems badge, so the count is visible from any view. */
+const problemRows = computed(() =>
+  shownRows.value.filter(
+    (row) => row.record.level === 'WARN' || row.record.level === 'ERROR',
+  ),
+)
+const problemCount = computed(() => problemRows.value.length)
+const problemHasError = computed(() =>
+  problemRows.value.some((row) => row.record.level === 'ERROR'),
+)
 
 /**
  * Drop a selection that has scrolled out of the client window, so the drawer
@@ -46,6 +57,9 @@ function muteMessage(message: string) {
 <template>
   <div class="explorer">
     <LogToolbar
+      :view="view"
+      :problem-count="problemCount"
+      :problem-has-error="problemHasError"
       :text="filters.text.value"
       :range-ms="filters.rangeMs.value"
       :following="stream.following.value"
@@ -53,6 +67,7 @@ function muteMessage(message: string) {
       :shown="shownRows.length"
       :total="stream.rows.value.length"
       :connection="connection"
+      @set-view="view = $event as LogView"
       @search="filters.text.value = $event"
       @time-range="filters.rangeMs.value = $event"
       @toggle-follow="stream.toggleFollow()"
@@ -77,18 +92,7 @@ function muteMessage(message: string) {
       />
 
       <main class="stream">
-        <LogStream
-          v-if="shownRows.length > 0"
-          :rows="shownRows"
-          :selected-seq="selected?.seq ?? null"
-          :following="stream.following.value"
-          :unseen="stream.unseen.value"
-          @select="selected = $event"
-          @follow="stream.follow()"
-          @pause="stream.pause()"
-        />
-
-        <div v-else class="empty">
+        <div v-if="shownRows.length === 0" class="empty">
           <p class="empty-title">
             {{
               stream.rows.value.length === 0
@@ -100,8 +104,8 @@ function muteMessage(message: string) {
             {{
               stream.rows.value.length === 0
                 ? connection === 'error'
-                  ? stream.errorMessage.value ??
-                    'The reader is not running. Explorer A reads the file log, so it works whether or not the OpenCode service is up.'
+                  ? (stream.errorMessage.value ??
+                    'The reader is not running. Explorer A reads the file log, so it works whether or not the OpenCode service is up.')
                   : 'Reading the log file…'
                 : `${filters.filteredOut.value.toLocaleString('en-US')} records are filtered out. Reset the filters to see them.`
             }}
@@ -115,6 +119,31 @@ function muteMessage(message: string) {
             Reset filters
           </button>
         </div>
+
+        <LogStream
+          v-else-if="view === 'stream'"
+          :rows="shownRows"
+          :selected-seq="selected?.seq ?? null"
+          :following="stream.following.value"
+          :unseen="stream.unseen.value"
+          @select="selected = $event"
+          @follow="stream.follow()"
+          @pause="stream.pause()"
+        />
+
+        <LogSpans
+          v-else-if="view === 'spans'"
+          :rows="shownRows"
+          :selected-seq="selected?.seq ?? null"
+          @select="selected = $event"
+        />
+
+        <LogProblems
+          v-else
+          :rows="shownRows"
+          :selected-seq="selected?.seq ?? null"
+          @select="selected = $event"
+        />
       </main>
 
       <LogDetail
