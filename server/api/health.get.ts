@@ -1,12 +1,17 @@
 import type { HealthResponse } from '#shared/types/health'
 
+import { getApiHealth } from '../utils/event-reader'
 import { getHealth } from '../utils/readers'
 
 /**
  * Per-source health for the app shell.
  *
- * Explorer A reports on the file reader (`following` / `paused` / `error`) and
- * Explorer B reports on the upstream connection, which is not wired until
- * Phase 6 and says so rather than pretending to be healthy.
+ * The two sources fail independently: Explorer A reads a file and keeps working
+ * with the service stopped, Explorer B needs a live connection and reconnects.
+ * Reporting them together would hide exactly the distinction this app exists to
+ * make.
  */
-export default defineEventHandler((): HealthResponse => getHealth())
+export default defineEventHandler((): HealthResponse => {
+  const health = getHealth()
+  return { ...health, api: getApiHealth() }
+})
