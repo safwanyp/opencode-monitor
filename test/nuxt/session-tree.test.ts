@@ -151,9 +151,8 @@ describe('filterSessionTree', () => {
 })
 
 describe('flattenSessionTree', () => {
-  const options = (expanded: string[], live: string[] = [], forceOpen = false) => ({
+  const options = (expanded: string[], live: string[] = []) => ({
     expanded: new Set(expanded),
-    forceOpen,
     liveSessions: new Map(live.map((id) => [id, Date.now()])),
   })
 
@@ -174,11 +173,20 @@ describe('flattenSessionTree', () => {
     expect(rows.map((r) => r.node.session.id)).toEqual(['root', 'c1', 'c2', 'g1', 'c3'])
   })
 
-  it('opens every surviving ancestor when a filter is active', () => {
-    // Otherwise a matched grandchild would exist but be invisible.
+  it('expands only what the caller asked for, filter or not', () => {
+    // Revealing a matched descendant is the caller's job now: the page expands a
+    // search's ancestors once, so a collapse the user makes afterwards sticks.
+    // Forcing rows open here is what made "Collapse all" a no-op under a filter.
     const tree = filterSessionTree(buildSessionTree(family()), (x) => x.id === 'g1')
-    const rows = flattenSessionTree(tree, options([], [], true))
-    expect(rows.map((r) => r.node.session.id)).toContain('g1')
+
+    expect(flattenSessionTree(tree, options([])).map((r) => r.node.session.id)).toEqual([
+      'root',
+    ])
+
+    // With the ancestors a search would expand, the match is visible.
+    expect(
+      flattenSessionTree(tree, options(['root', 'c2'])).map((r) => r.node.session.id),
+    ).toEqual(['root', 'c2', 'g1'])
   })
 
   it('aggregates cost and live counts across the subtree', () => {

@@ -133,8 +133,6 @@ export interface FlatSessionRow {
 
 export interface FlattenOptions {
   expanded: Set<string>
-  /** When a filter is active every surviving ancestor is shown open. */
-  forceOpen: boolean
   liveSessions: Map<string, number>
 }
 
@@ -154,7 +152,9 @@ export function flattenSessionTree(
   const walk = (level: SessionNode[]) => {
     for (const node of level) {
       const hasChildren = node.children.length > 0
-      const expanded = hasChildren && (options.forceOpen || options.expanded.has(node.session.id))
+      // Expansion is the user's alone. A filter that forced rows open would make
+      // "Collapse all" a no-op, which is exactly how it read.
+      const expanded = hasChildren && options.expanded.has(node.session.id)
 
       const subtree = [node, ...collect(node)]
       out.push({

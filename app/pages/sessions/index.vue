@@ -174,10 +174,42 @@ const tree = computed(() =>
 const rows = computed(() =>
   flattenSessionTree(tree.value, {
     expanded: new Set(expanded.value),
-    forceOpen: filterActive.value,
     liveSessions: liveSessions.value,
   }),
 )
+
+/**
+ * Every parent in the current tree, at any depth.
+ *
+ * Walks the tree rather than the flattened rows: a row that is hidden under a
+ * collapsed parent is not in `rows`, so scanning `rows` only ever expands one
+ * level per click.
+ */
+function parentIds(): string[] {
+  const ids: string[] = []
+  const visit = (node: SessionNode) => {
+    if (node.children.length > 0) ids.push(node.session.id)
+    for (const child of node.children) visit(child)
+  }
+  for (const node of tree.value) visit(node)
+  return ids
+}
+
+/**
+ * Reveal what a search matched.
+ *
+ * A search hunts for something specific, so a match buried under a collapsed
+ * parent would be invisible — the one thing a filter must not do. Expanding its
+ * ancestors once, when the query changes, keeps that guarantee while leaving
+ * every later collapse intact.
+ *
+ * Facet filters do not do this. They select a set rather than hunt for a
+ * needle, so the tree stays as the user left it.
+ */
+watch(search, () => {
+  if (search.value.trim() === '') return
+  expanded.value = [...new Set([...expanded.value, ...parentIds()])]
+})
 
 /**
  * Flagged sessions per subtree.
@@ -265,9 +297,7 @@ function toggleExpand(id: string) {
 }
 
 function expandAll() {
-  const ids = new Set(expanded.value)
-  for (const row of rows.value) if (row.hasChildren) ids.add(row.node.session.id)
-  expanded.value = [...ids]
+  expanded.value = [...new Set([...expanded.value, ...parentIds()])]
 }
 
 function collapseAll() {
@@ -576,7 +606,11 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
             class="row"
             :class="{ 'is-child': entry.node.depth > 0 }"
           >
-            <span v-if="entry.node.depth > 0" class="thread" :style="{ left: `${16 + (entry.node.depth - 1) * 14 + 6}px` }" />
+            <span
+              v-if="entry.node.depth > 0"
+              class="thread"
+              :style="{ left: `calc(var(--lead) + var(--indent) * ${entry.node.depth - 1})` }"
+            />
 
             <span class="cell marker">
               <button
@@ -604,7 +638,7 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
             <NuxtLink
               :to="`/sessions/${entry.node.session.id}`"
               class="row-link"
-              :style="{ paddingLeft: `${entry.node.depth * 14}px` }"
+              :style="{ paddingLeft: `calc(var(--indent) * ${entry.node.depth})` }"
             >
               <span class="cell title">
                 <span class="title-text">{{ entry.node.session.title }}</span>
@@ -1032,6 +1066,11 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
 }
 
 .row {
+  /* The indent gutter begins after the row padding, the marker column and the
+     gap between them; `--lead` lands the thread inside that gutter rather than
+     on top of the chevron, which is what a bare 16px offset did. */
+  --indent: 14px;
+  --lead: calc(16px + 26px + 12px + 6px);
   position: relative;
   display: flex;
   flex-direction: row;
