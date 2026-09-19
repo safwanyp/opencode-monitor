@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const health = useSourceHealth()
+const health = useHealthPolling()
 </script>
 
 <template>

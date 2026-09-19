@@ -290,6 +290,7 @@ earns no place. Live = `/api/event`; history = `/message`.
 | `GET /api/logs/records` | A — backfill from ring buffer | `server/api/logs/records.get.ts` |
 | `GET /api/logs/stream` | A — live SSE | `server/api/logs/stream.get.ts` |
 | `GET /api/logs/files` | A — legacy archive inventory, flagged non-parseable | `server/api/logs/files.get.ts` |
+| `GET /api/logs/facets` | A — whole-buffer counts for the facet panel | `server/api/logs/facets.get.ts` |
 | `GET /api/events/sessions` | B — session list | `server/api/events/sessions.get.ts` |
 | `GET /api/events/session/[id]` | B — transcript | `server/api/events/session/[id].get.ts` |
 | `GET /api/events/stream` | B — live SSE | `server/api/events/stream.get.ts` |
@@ -362,6 +363,9 @@ redaction toggle) · per-source health indicator.
 | Live transport | `fetch` + `ReadableStream` (not `EventSource` — auth header required) |
 | Noise | Mute-by-default heartbeat messages (5) |
 | Archives | Inventory only — legacy console format, never parsed (§2.1) |
+| Virtualization | Hand-rolled fixed-height windowing | Rows are a fixed 32px, so the window is arithmetic rather than measurement; avoids a dependency and a virtualiser's config surface |
+| Client filtering | Entirely client-side | The retained window is at most 20k records and is already transferred; a round trip per keystroke would be slower and would decouple the filters from the data they describe |
+| Facets | Whole-buffer, computed server-side | A count over the fetched page would say almost nothing about the log; the facet panel describes the buffer, and the client decides presentation |
 
 ---
 

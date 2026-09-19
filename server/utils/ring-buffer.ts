@@ -23,6 +23,13 @@ export interface RingBuffer<T> {
   push(value: T): number
   /** Up to `limit` retained entries strictly newer than `fromSeq`, oldest first. */
   after(fromSeq: number, limit: number): BufferEntry<T>[]
+  /**
+   * Every retained entry, oldest first.
+   *
+   * Used for whole-window aggregation such as facet counts. Allocates, so it is
+   * not for hot paths.
+   */
+  snapshot(): BufferEntry<T>[]
   /** Sequence of the most recent push, or 0 when nothing has been pushed. */
   latestSeq(): number
   /**
@@ -79,6 +86,15 @@ export function createRingBuffer<T>(capacity: number): RingBuffer<T> {
 
     latestSeq(): number {
       return nextSeq - 1
+    },
+
+    snapshot(): BufferEntry<T>[] {
+      const out: BufferEntry<T>[] = []
+      for (let i = 0; i < count; i++) {
+        const entry = slots[(start + i) % capacity]
+        if (entry) out.push(entry)
+      }
+      return out
     },
 
     oldestSeq(): number {

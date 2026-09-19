@@ -49,3 +49,25 @@ export interface LogFilesResponse {
   archivesParseable: boolean
   note: string
 }
+
+export interface FacetCount {
+  value: string
+  count: number
+}
+
+/**
+ * Whole-buffer aggregation for the facet panel.
+ *
+ * Counts are over the entire retained window, not over the page the client has
+ * fetched, because a count over 200 records says almost nothing. They are not
+ * re-computed per active filter either: facets describe what is in the buffer,
+ * and the client decides what to show.
+ */
+export interface LogFacetsResponse {
+  total: number
+  level: FacetCount[]
+  role: FacetCount[]
+  run: FacetCount[]
+  /** Highest-volume messages only; the long tail is not worth the bytes. */
+  message: FacetCount[]
+}

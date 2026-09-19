@@ -3,14 +3,15 @@ import { describe, expect, it } from 'vitest'
 import {
   RECORDS_DEFAULT_LIMIT,
   RECORDS_MAX_LIMIT,
+  defaultCursor,
   parseRecordsQuery,
   parseStreamCursor,
 } from '../server/utils/api-params.ts'
 
 describe('parseRecordsQuery', () => {
-  it('applies defaults when nothing is given', () => {
+  it('reports no cursor when nothing is given, which is not the same as 0', () => {
     expect(parseRecordsQuery({})).toEqual({
-      after: 0,
+      after: null,
       limit: RECORDS_DEFAULT_LIMIT,
     })
   })
@@ -22,6 +23,12 @@ describe('parseRecordsQuery', () => {
     })
   })
 
+  it('treats an explicit 0 as a real cursor', () => {
+    // after=0 means "from the oldest record still held", a deliberate request
+    // for everything, not an absent cursor.
+    expect(parseRecordsQuery({ after: '0' }).after).toBe(0)
+  })
+
   it('clamps limit so one request cannot ask for everything', () => {
     expect(parseRecordsQuery({ limit: '999999' }).limit).toBe(RECORDS_MAX_LIMIT)
     expect(parseRecordsQuery({ limit: '2000' }).limit).toBe(RECORDS_MAX_LIMIT)
@@ -29,15 +36,15 @@ describe('parseRecordsQuery', () => {
 
   it('falls back on unusable values rather than throwing', () => {
     expect(parseRecordsQuery({ after: 'abc', limit: 'abc' })).toEqual({
-      after: 0,
+      after: null,
       limit: RECORDS_DEFAULT_LIMIT,
     })
     expect(parseRecordsQuery({ after: '-5', limit: '0' })).toEqual({
-      after: 0,
+      after: null,
       limit: RECORDS_DEFAULT_LIMIT,
     })
     expect(parseRecordsQuery({ after: '  ', limit: '' })).toEqual({
-      after: 0,
+      after: null,
       limit: RECORDS_DEFAULT_LIMIT,
     })
   })
@@ -51,9 +58,21 @@ describe('parseRecordsQuery', () => {
 
   it('ignores values that are not finite numbers', () => {
     expect(parseRecordsQuery({ after: 'Infinity', limit: 'NaN' })).toEqual({
-      after: 0,
+      after: null,
       limit: RECORDS_DEFAULT_LIMIT,
     })
+  })
+})
+
+describe('defaultCursor', () => {
+  it('returns the newest window, not the oldest', () => {
+    // First load wants recent records; the buffer holds 20k.
+    expect(defaultCursor(20_000, 200)).toBe(19_800)
+  })
+
+  it('never goes negative on a buffer smaller than the page', () => {
+    expect(defaultCursor(50, 200)).toBe(0)
+    expect(defaultCursor(0, 200)).toBe(0)
   })
 })
 

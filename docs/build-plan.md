@@ -280,7 +280,12 @@ If time is short, Phase 1 and Phase 4 are the two that decide whether the tool i
 
 ## Open questions for the implementation session
 
-1. **Virtualization library** — pick one, or hand-roll windowing. Decide at Phase 4.
+1. **Virtualization library** — **decided: hand-rolled windowing.** Log rows are a fixed 32px by
+   design, so the visible window is arithmetic rather than measurement. That removes a dependency
+   and the class of bugs where a virtualiser measures wrong during a layout change.
+2. **"Load older" paging** — the client loads the whole *ring buffer*, not the whole file. Paging
+   backwards through the 39 MB file in chunks (design §6) is still unimplemented and is the next
+   thing to add when the buffer's 20k window feels too small.
 2. **Rotation trigger** — confirm whether OpenCode rotates on size or time; adjust the tailer if
    needed (design §13 lists this as unverified). Every archive to date is legacy console format,
    so do not assume a rotated file is logfmt: detect the format before parsing it.

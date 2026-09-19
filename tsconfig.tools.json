@@ -23,5 +23,13 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["shared/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
+
+  // Covers what no generated Nuxt project does: shared/, scripts/, and the
+  // plain tests. Deliberately does NOT have Nuxt's auto-import globals, so a
+  // missing import here cannot hide behind them.
+  "include": ["shared/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
+
+  // Tests that touch app code need Nuxt's globals, so they live under
+  // test/nuxt/ and are typechecked by Nuxt's own tsconfig.app.json instead.
+  "exclude": ["test/nuxt/**"]
 }

@@ -11,7 +11,11 @@ export const RECORDS_DEFAULT_LIMIT = 200
 export const RECORDS_MAX_LIMIT = 2000
 
 export interface RecordsQuery {
-  after: number
+  /**
+   * `null` means the caller did not specify a cursor, which is a different
+   * question from `0`. See `defaultCursor`.
+   */
+  after: number | null
   limit: number
 }
 
@@ -29,15 +33,16 @@ function toInteger(value: unknown): number | null {
 /**
  * `?after=&limit=` for the backfill endpoint.
  *
- * - `after` defaults to 0, i.e. as far back as the buffer still holds.
+ * - `after` is null when absent or unusable; `after=0` means "from the oldest
+ *   record still held", which is a deliberate request for everything.
  * - `limit` defaults to 200 and is clamped to 2000, so one request cannot ask
- *   for everything.
+ *   for the whole buffer by accident.
  */
 export function parseRecordsQuery(
   query: Record<string, unknown>,
 ): RecordsQuery {
   const rawAfter = toInteger(query['after'])
-  const after = rawAfter !== null && rawAfter >= 0 ? rawAfter : 0
+  const after = rawAfter !== null && rawAfter >= 0 ? rawAfter : null
 
   const rawLimit = toInteger(query['limit'])
   const limit =
@@ -46,6 +51,16 @@ export function parseRecordsQuery(
       : RECORDS_DEFAULT_LIMIT
 
   return { after, limit }
+}
+
+/**
+ * Where an unspecified cursor starts: the newest `limit` records.
+ *
+ * The first load of the UI wants the most recent window, not the oldest one.
+ * Paging backwards is a separate, deliberate request (`after=0` then forward).
+ */
+export function defaultCursor(latestSeq: number, limit: number): number {
+  return Math.max(0, latestSeq - limit)
 }
 
 /**
