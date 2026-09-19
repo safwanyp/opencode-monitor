@@ -101,6 +101,18 @@
   --header-height: 52px;
   --toolbar-height: 46px;
   --statusbar-height: 28px;
+
+  /* Log-stream lanes. The row and its column header both read these, so the
+     two cannot drift apart. --row-height is also read by the virtualiser, so
+     the CSS stays the single source of truth for row geometry. */
+  --row-height: 32px;
+  --lane-gap: 12px;
+  --lane-time: 88px;
+  --lane-level: 58px;
+  --lane-role: 54px;
+  --lane-run: 70px;
+  --lane-span: 64px;
+  --row-padding-inline: 16px;
 }
 
 /* --- reset ---------------------------------------------------------------- */

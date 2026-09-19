@@ -11,10 +11,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [row: LogRow]
   follow: []
+  pause: []
 }>()
 
-/** Matches the row height in LogRow.vue and the Paper design. */
+/** Fallback only; the real value is read from the `--row-height` token. */
 const ROW_HEIGHT = 32
+
+const headerRef = ref<HTMLElement | null>(null)
 
 const {
   scroller,
@@ -28,23 +31,58 @@ const {
 } = useVirtualRows({
   count: () => props.rows.length,
   rowHeight: ROW_HEIGHT,
+  // The header lives inside the scroller so it shares the rows' width exactly;
+  // the window maths therefore has to skip its height.
+  leadingOffset: () => headerRef.value?.offsetHeight ?? 0,
 })
 
-const window = computed(() =>
-  props.rows.slice(startIndex.value, endIndex.value),
-)
+const window = computed(() => props.rows.slice(startIndex.value, endIndex.value))
 
-// Auto-scroll only while following, and only if the user has not scrolled away.
-// Scrolling up is how you read history, so it must not be fought.
-function maybeFollow() {
-  if (props.following && isAtBottom()) scrollToBottom()
+/**
+ * The first fill jumps to the newest record unconditionally.
+ *
+ * Follow has to be conditional afterwards so that scrolling up to read is never
+ * fought — but on first paint there is no user intent to respect, and landing
+ * on the oldest records is simply wrong.
+ *
+ * This also has to run on mount, not only on change: the parent renders this
+ * component only once there are rows, so `rows.length` never changes from zero.
+ */
+let didInitialScroll = false
+
+function jumpToNewest() {
+  didInitialScroll = true
+  scrollToBottom()
 }
 
-watch(() => props.rows.length, () => nextTick(maybeFollow))
+onMounted(() => {
+  if (props.rows.length === 0) return
+  requestAnimationFrame(() => {
+    if (props.rows.length > 0) jumpToNewest()
+  })
+})
 
+watch(
+  () => props.rows.length,
+  async () => {
+    await nextTick()
+    if (props.rows.length === 0) return
+
+    if (!didInitialScroll) {
+      jumpToNewest()
+      return
+    }
+
+    if (props.following && isAtBottom()) scrollToBottom()
+  },
+)
+
+/** Scrolling is the follow control: up means stop following, bottom means resume. */
 function onUserScroll() {
   onScroll()
-  if (!props.following && isAtBottom()) emit('follow')
+  const atBottom = isAtBottom()
+  if (atBottom && !props.following) emit('follow')
+  else if (!atBottom && props.following) emit('pause')
 }
 </script>
 
@@ -55,8 +93,18 @@ function onUserScroll() {
       class="scroller"
       role="log"
       aria-label="Service log records"
+      aria-live="off"
       @scroll="onUserScroll"
     >
+      <div ref="headerRef" class="columns" aria-hidden="true">
+        <span class="col time">Time</span>
+        <span class="col level">Level</span>
+        <span class="col role">Role</span>
+        <span class="col run">Run</span>
+        <span class="col message">Message</span>
+        <span class="col span">Span</span>
+      </div>
+
       <div class="sizer" :style="{ height: `${totalHeight}px` }">
         <div class="window" :style="{ transform: `translateY(${offsetY}px)` }">
           <LogRow
@@ -94,12 +142,58 @@ function onUserScroll() {
   min-height: 0;
 }
 
+/* Lanes come from the same tokens the rows use, so the two cannot drift.
+   Inside the scroller and sticky, so it shares the rows' width exactly — a
+   header outside would be one scrollbar wider than the rows it labels. */
+.columns {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--lane-gap);
+  height: 30px;
+  flex-shrink: 0;
+  padding: 0 var(--row-padding-inline);
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg);
+}
+
+.col {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  color: var(--color-text-muted);
+}
+
+.col.time {
+  width: var(--lane-time);
+}
+.col.level {
+  width: var(--lane-level);
+}
+.col.role {
+  width: var(--lane-role);
+}
+.col.run {
+  width: var(--lane-run);
+}
+.col.message {
+  flex: 1;
+  min-width: 140px;
+}
+.col.span {
+  width: var(--lane-span);
+  text-align: right;
+}
+
 .scroller {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  contain: strict;
 }
 
 .sizer {

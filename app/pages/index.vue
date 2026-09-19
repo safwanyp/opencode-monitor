@@ -85,6 +85,7 @@ function muteMessage(message: string) {
           :unseen="stream.unseen.value"
           @select="selected = $event"
           @follow="stream.follow()"
+          @pause="stream.pause()"
         />
 
         <div v-else class="empty">

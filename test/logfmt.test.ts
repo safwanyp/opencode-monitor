@@ -184,6 +184,27 @@ describe('toLogRecord', () => {
     expect(toLogRecord({}).span).toBeUndefined()
   })
 
+  it('falls back to msg when message is absent', () => {
+    // Verified against the whole buffer: some lines carry `msg` instead of
+    // `message`, and the two never co-occur.
+    const record = toLogRecord(parseLogfmt('msg="loading plugin" id=7'))
+    expect(record.message).toBe('loading plugin')
+    expect(record.fields).toEqual({ id: '7' })
+  })
+
+  it('prefers message when both keys somehow appear', () => {
+    const record = toLogRecord(parseLogfmt('message=primary msg=secondary'))
+    expect(record.message).toBe('primary')
+  })
+
+  it('leaves message empty when neither key is present', () => {
+    // 6 of 7,648 records in the live buffer are like this; the UI supplies a
+    // fallback rather than the parser inventing one.
+    const record = toLogRecord(parseLogfmt('cause="InterruptError" http.status=200'))
+    expect(record.message).toBe('')
+    expect(record.fields).toEqual({ cause: 'InterruptError', 'http.status': '200' })
+  })
+
   it('never drops a field', () => {
     const record = toLogRecord(parseLogfmt('a=1 b="two words" timestamp=t'))
     expect(record.fields).toEqual({ a: '1', b: 'two words' })

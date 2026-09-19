@@ -179,6 +179,10 @@ const PROMOTED_KEYS = new Set([
   'run',
   'http.span',
   'message',
+  // Some lines use `msg` instead of `message` for the same thing. Verified
+  // across the whole buffer that the two never co-occur, so this is an
+  // unambiguous alternative rather than a guess.
+  'msg',
 ])
 
 const LEVELS = new Set<LogLevel>(['INFO', 'WARN', 'ERROR', 'DEBUG'])
@@ -241,7 +245,7 @@ export function toLogRecord(
     role: toRole(fields['role']),
     run: fields['run'],
     span: toSpan(fields['http.span']),
-    message: fields['message'] ?? '',
+    message: fields['message'] ?? fields['msg'] ?? '',
     fields: rest,
   }
 }

@@ -113,28 +113,43 @@ const messages = computed(() => props.facets?.message ?? [])
 
     <section v-if="runs.length" class="group">
       <h2 class="group-title">Run</h2>
-      <button
-        type="button"
-        class="facet-row"
-        :class="{ 'is-off': run !== 'any' }"
-        @click="emit('set-run', 'any')"
-      >
-        <span class="facet-label">All runs</span>
-        <span class="facet-count mono">{{ runs.length }}</span>
-      </button>
-      <button
-        v-for="entry in runs"
-        :key="entry.value"
-        type="button"
-        class="facet-row"
-        :class="{ 'is-off': run !== entry.value }"
-        @click="emit('set-run', entry.value)"
-      >
-        <span class="mono facet-label">{{ entry.value }}</span>
-        <span class="facet-count mono">{{
-          entry.count.toLocaleString('en-US')
+      <!-- The design had a single compact select here rather than a list: with
+           one run per session the list runs to twenty rows of count 1, which
+           pushes the message controls off the panel. -->
+      <label class="run-select">
+        <select
+          class="select-native"
+          :value="run"
+          @change="emit('set-run', ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="any">All runs ({{ runs.length }})</option>
+          <option v-for="entry in runs" :key="entry.value" :value="entry.value">
+            {{ entry.value }} — {{ entry.count.toLocaleString('en-US') }}
+          </option>
+        </select>
+        <span class="run-label mono">{{
+          run === 'any' ? 'All runs' : run
         }}</span>
-      </button>
+        <span class="run-count mono">{{
+          (
+            run === 'any'
+              ? runs.length
+              : (runs.find((r) => r.value === run)?.count ?? 0)
+          ).toLocaleString('en-US')
+        }}</span>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="var(--color-text-faint)"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M4 6.5 8 10.5l4-4" />
+        </svg>
+      </label>
     </section>
 
     <section class="group">
@@ -380,6 +395,51 @@ const messages = computed(() => props.facets?.message ?? [])
   background-color: var(--color-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+}
+
+.run-select {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 9px 0 10px;
+  background-color: var(--color-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* Native control kept for behaviour and accessibility, hidden so the label can
+   carry the design's typography. */
+.select-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.run-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--color-text-secondary);
+}
+
+.run-count {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 15px;
+  padding: 1px 5px;
+  color: var(--color-text-muted);
+  background-color: var(--color-overlay);
+  border-radius: var(--radius-xs);
 }
 
 .segment {

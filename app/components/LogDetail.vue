@@ -36,6 +36,17 @@ const redacted = computed(() => {
 
 const record = computed(() => redacted.value.value)
 
+/** Same fallback the row uses, so the drawer is never titled with nothing. */
+const title = computed(() => {
+  if (!record.value) return ''
+  if (record.value.message) return record.value.message
+  const first = Object.entries(record.value.fields)[0]
+  return first ? `${first[0]}=${first[1]}` : '(no message)'
+})
+
+/** Only offer to mute something that has a message to match on. */
+const canMute = computed(() => Boolean(record.value?.message))
+
 const levelTone: Record<string, string> = {
   INFO: 'info',
   WARN: 'warn',
@@ -159,7 +170,7 @@ const rawLine = computed(() => {
           </button>
         </div>
 
-        <h2 class="title">{{ record.message }}</h2>
+        <h2 class="title">{{ title }}</h2>
 
         <div class="meta">
           <span class="mono">{{ time }}</span>
@@ -202,7 +213,12 @@ const rawLine = computed(() => {
           <p v-if="fieldEntries.length === 0" class="note">
             This record has no extra fields.
           </p>
-          <div v-for="entry in fieldEntries" :key="entry.key" class="field">
+          <div
+            v-for="entry in fieldEntries"
+            :key="entry.key"
+            class="field"
+            :class="{ 'is-block': entry.json }"
+          >
             <span class="field-key mono">{{ entry.key }}</span>
             <div class="field-value">
               <pre v-if="entry.json" class="code mono">{{ entry.json }}</pre>
@@ -237,6 +253,7 @@ const rawLine = computed(() => {
           <span class="chev">›</span>
         </button>
         <button
+          v-if="canMute"
           type="button"
           class="related-row"
           @click="emit('mute-message', record.message)"
@@ -464,19 +481,33 @@ const rawLine = computed(() => {
   color: var(--color-text-muted);
 }
 
+/* Key on the left in a fixed lane, value on the right: scan the keys down one
+   column rather than hunting for them. A JSON-looking value gets the full width
+   instead, because a pretty-printed block needs it. */
 .field {
   display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.field.is-block {
   flex-direction: column;
-  gap: 5px;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .field-key {
+  width: 104px;
+  flex-shrink: 0;
   font-size: 11px;
   line-height: 16px;
   color: var(--color-text-muted);
 }
 
 .field-value {
+  flex: 1;
+  min-width: 0;
   font-size: 11.5px;
   line-height: 17px;
   color: var(--color-text-secondary);

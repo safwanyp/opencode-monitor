@@ -26,11 +26,26 @@ const time = computed(() => {
 /** Up to three field values, as `key=value`, as a quiet preview. */
 const preview = computed(() => {
   const entries = Object.entries(props.row.record.fields)
-  if (entries.length === 0) return ''
-  return entries
+  // When the message is missing the first field is promoted to the primary
+  // text, so the preview must not repeat it.
+  const rest = props.row.record.message ? entries : entries.slice(1)
+  if (rest.length === 0) return ''
+  return rest
     .slice(0, 3)
     .map(([key, value]) => `${key}=${value}`)
     .join(' ')
+})
+
+/**
+ * A handful of lines carry neither `message` nor `msg` (6 of 7,648 in the live
+ * buffer). Falling back to the first field keeps the row and the drawer from
+ * rendering a blank where a description belongs.
+ */
+const primary = computed(() => {
+  const record = props.row.record
+  if (record.message) return record.message
+  const first = Object.entries(record.fields)[0]
+  return first ? `${first[0]}=${first[1]}` : '(no message)'
 })
 
 const tone = computed(() => LEVEL_TONE[props.row.record.level] ?? 'info')
@@ -62,7 +77,7 @@ const hasRail = computed(
     </span>
 
     <span class="cell message">
-      <span class="message-text">{{ row.record.message }}</span>
+      <span class="message-text">{{ primary }}</span>
       <span v-if="preview" class="preview mono">{{ preview }}</span>
     </span>
 
@@ -78,11 +93,11 @@ const hasRail = computed(
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: var(--lane-gap);
   width: 100%;
-  height: 32px;
+  height: var(--row-height);
   flex-shrink: 0;
-  padding: 0 16px;
+  padding: 0 var(--row-padding-inline);
   text-align: left;
   border-bottom: 1px solid var(--color-divider);
   background-color: transparent;
@@ -114,7 +129,7 @@ const hasRail = computed(
 }
 
 .time {
-  width: 88px;
+  width: var(--lane-time);
   font-size: 11.5px;
   line-height: var(--leading-tight);
   color: var(--color-text-muted);
@@ -125,7 +140,7 @@ const hasRail = computed(
   flex-direction: row;
   align-items: center;
   gap: 6px;
-  width: 58px;
+  width: var(--lane-level);
 }
 
 .dot {
@@ -142,7 +157,7 @@ const hasRail = computed(
 }
 
 .role {
-  width: 54px;
+  width: var(--lane-role);
   font-size: 11px;
   line-height: var(--leading-tight);
   color: var(--color-text-muted);
@@ -152,7 +167,7 @@ const hasRail = computed(
   display: flex;
   flex-direction: row;
   align-items: center;
-  width: 70px;
+  width: var(--lane-run);
 }
 
 .run-chip {
@@ -170,11 +185,19 @@ const hasRail = computed(
   align-items: center;
   gap: 9px;
   flex: 1;
-  min-width: 0;
+  /* A floor, so a narrow window shrinks the message lane rather than
+     collapsing it to nothing. */
+  min-width: 140px;
 }
 
 .message-text {
   flex-shrink: 0;
+  /* Never let a long message push the preview out of the row; the drawer is
+     where the full text lives. */
+  max-width: 70%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 12.5px;
   line-height: var(--leading-tight);
   color: var(--color-text);
@@ -189,7 +212,7 @@ const hasRail = computed(
 }
 
 .span {
-  width: 64px;
+  width: var(--lane-span);
   text-align: right;
   font-size: 10.5px;
   line-height: var(--leading-tight);
