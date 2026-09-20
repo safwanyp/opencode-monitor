@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "nuxt typecheck && tsc --noEmit -p tsconfig.tools.json",
-    "verify:logfmt": "node scripts/verify-logfmt.ts"
+    "verify:logfmt": "node scripts/verify-logfmt.ts \"${XDG_DATA_HOME:-$HOME/.local/share}/opencode/log/opencode.log\""
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
