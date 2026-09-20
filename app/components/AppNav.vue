@@ -2,8 +2,8 @@
 const route = useRoute()
 
 const links = [
-  { to: '/logs', label: 'Service Log' },
   { to: '/sessions', label: 'Sessions' },
+  { to: '/logs', label: 'Service Log' },
 ]
 
 /**
