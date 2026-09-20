@@ -30,6 +30,10 @@ Quick index of settled decisions. Rationale and evidence live in `docs/design.md
 | 24 | Unscored agents | **Never guessed** | `build` has no definition and no declaration, so scoring it would manufacture mismatches |
 | 25 | Model resolution | **Server-side, one implementation** | The client receives `agent → provider/model#variant` and looks it up, so it cannot disagree with the server |
 | 26 | Context switcher | **A filter, not a mode** | It narrows the same session list; sessions are the only surface it governs for now |
+| 27 | Theming | **`light-dark()` tokens, system by default** | Each token is declared once with both values and `color-scheme` does the switching, so the OS default needs no JavaScript and cannot flash |
+| 28 | Light palette | **Same foundation, seen from the other side** | Bone is the ground in light and the text in dark; verdigris deepens rather than brightens, which is what the metal does |
+| 29 | Toggle semantics | **Two states, no "system" in the cycle** | The OS picks where you start; after that a click always lands on the theme you are not looking at. A third state would make the common case a double-click |
+| 30 | Default route | **`/sessions`** | Sessions are what the monitor is opened to look at; `/` redirects in Nitro so there is no client-side hop |
 
 ## Rejected alternatives
 
@@ -47,3 +51,6 @@ Quick index of settled decisions. Rationale and evidence live in `docs/design.md
 | Scanning the whole filesystem for configs | Finds configs no session ever used, and pays for them |
 | Re-parsing configs in the client | Two implementations of the precedence rules that can disagree; the server resolves once |
 | Hiding the mismatch detail behind a filter only | The flags are all on subagents; with parents collapsed and no rollup the feature was invisible |
+| Two duplicated palette blocks (light + dark) | `light-dark()` keeps each token in one place, and lightningcss compiles it to a polyfill so older browsers are covered |
+| Dark-only, with a light theme bolted on later | The token foundation is the cheap moment to make colour theme-agnostic; retrofitting means revisiting every scoped style |
+| Keeping the log at `/` and redirecting the other way | The default route should be the page worth opening, not the one with historical precedent |

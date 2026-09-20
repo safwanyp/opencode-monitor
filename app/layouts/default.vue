@@ -9,7 +9,10 @@ const health = useHealthPolling()
       <span class="rule" />
       <AppNav />
       <span class="spacer" />
-      <SourceHealth :health="health" />
+      <div class="actions">
+        <SourceHealth :health="health" />
+        <AppThemeToggle />
+      </div>
     </header>
 
     <div class="body">
@@ -46,6 +49,15 @@ const health = useHealthPolling()
 
 .spacer {
   margin-left: auto;
+}
+
+/* A slightly wider gap than the pills use internally, so the theme toggle reads
+   as a control rather than a third status light. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .body {

@@ -27,13 +27,34 @@ export default defineNuxtConfig({
   // styling stays in scoped SFC blocks.
   css: ['~/assets/css/main.css'],
 
+  // Sessions are what you open the monitor to look at, so they own the root.
+  // Nitro answers `/` with a redirect before the SPA loads, so there is no
+  // client-side hop and no flash of the wrong explorer.
+  routeRules: {
+    '/': { redirect: '/sessions' },
+  },
+
   app: {
     head: {
       title: 'OpenCode Monitor',
       htmlAttrs: { lang: 'en' },
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'color-scheme', content: 'dark' },
+        // Not `dark`: the app follows the system until the user picks.
+        { name: 'color-scheme', content: 'light dark' },
+      ],
+      script: [
+        {
+          // Runs before the first paint. An explicit choice must not flash the
+          // system theme on the way in.
+          //
+          // Importing the key from the composable would drag app context into
+          // this config's TS program, so it is repeated here and must match
+          // THEME_STORAGE_KEY in app/composables/useTheme.ts.
+          innerHTML:
+            "try{var t=localStorage.getItem('opencode-monitor:theme')" +
+            ";if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}",
+        },
       ],
     },
   },

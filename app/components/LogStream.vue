@@ -283,7 +283,7 @@ function onUserScroll() {
   border-radius: var(--radius-full);
   font-size: 12px;
   color: var(--color-text-secondary);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+  box-shadow: var(--shadow-popover);
 }
 
 .jump:hover {

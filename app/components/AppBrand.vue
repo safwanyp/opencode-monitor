@@ -1,5 +1,5 @@
 <template>
-  <NuxtLink to="/" class="brand" aria-label="OpenCode Monitor home">
+  <NuxtLink to="/sessions" class="brand" aria-label="OpenCode Monitor home">
     <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <circle cx="8" cy="8" r="6.4" stroke="var(--color-accent-dim)" stroke-width="1.4" />
       <circle cx="8" cy="8" r="2.1" fill="var(--color-accent)" />

@@ -422,7 +422,7 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
           >
             <span class="checkbox" :class="{ 'is-checked': outcomes.includes(value) }">
               <svg v-if="outcomes.includes(value)" width="9" height="9" viewBox="0 0 12 12"
-                fill="none" stroke="#08110F" stroke-width="2.1" stroke-linecap="round"
+                fill="none" stroke="var(--color-on-accent)" stroke-width="2.1" stroke-linecap="round"
                 stroke-linejoin="round"><path d="M2.4 6.3 4.8 8.7 9.7 3.5" /></svg>
             </span>
             <span class="facet-label">{{ value }}</span>
@@ -502,19 +502,6 @@ const COLUMNS: Array<{ key: SessionSortKey; label: string; cls: string; right?: 
             <span class="facet-count mono">{{ formatCount(count) }}</span>
           </button>
         </section>
-
-        <p class="note">
-          Every session on this machine, across all projects — subagents nested
-          under the session that spawned them.
-          <template v-if="truncated">
-            Showing the most recent {{ formatCount(sessions.length) }}; older
-            sessions are not loaded.
-          </template>
-          <template v-else>
-            {{ formatCount(sessions.length) }} loaded.
-          </template>
-          Live badges come from the event stream; the list is polled.
-        </p>
       </aside>
 
       <main class="main">

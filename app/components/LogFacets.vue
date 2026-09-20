@@ -79,7 +79,7 @@ const messages = computed(() => props.facets?.message ?? [])
             height="9"
             viewBox="0 0 12 12"
             fill="none"
-            stroke="#08110F"
+            stroke="var(--color-on-accent)"
             stroke-width="2.1"
             stroke-linecap="round"
             stroke-linejoin="round"

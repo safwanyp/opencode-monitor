@@ -15,37 +15,54 @@
 @import '@fontsource/ibm-plex-mono/latin-600.css';
 
 :root {
-  color-scheme: dark;
+  /* `color-scheme` is the switch. Left as `light dark` the browser follows the
+     operating system, so a first visit is themed before a line of JavaScript
+     runs and cannot flash. Picking a theme pins it (see the rules below) and
+     every `light-dark()` token resolves to the other column. */
+  color-scheme: light dark;
 
-  /* --- surfaces ---------------------------------------------------------- */
-  --color-bg: #0c0f0e; /* app ground */
-  --color-surface: #111514; /* panels, rails, drawers */
-  --color-raised: #171c1a; /* inputs, hover, chips */
-  --color-overlay: #1d2321; /* selected row, highest surface */
+  /* --- surfaces ----------------------------------------------------------
+     Mineral ground, layered like paper on stone: the further a surface sits
+     above the page, the lighter it gets. Bone is the ground in light mode and
+     the text in dark — one material, seen from either side. */
+  --color-bg: light-dark(#efede6, #0c0f0e); /* app ground */
+  --color-surface: light-dark(#f7f5f0, #111514); /* panels, rails, drawers */
+  --color-raised: light-dark(#fcfbf8, #171c1a); /* inputs, hover, chips */
+  --color-overlay: light-dark(#ffffff, #1d2321); /* selected row, highest surface */
 
   /* --- lines ------------------------------------------------------------- */
-  --color-border: #212725; /* hairline: the primary structural device */
-  --color-border-strong: #2e3633;
-  --color-divider: #161b19; /* row separator, quieter than a border */
+  --color-border: light-dark(#d9d5c9, #212725); /* hairline: the primary structural device */
+  --color-border-strong: light-dark(#c3beb0, #2e3633);
+  --color-divider: light-dark(#e5e2d8, #161b19); /* row separator, quieter than a border */
 
   /* --- text -------------------------------------------------------------- */
-  --color-text: #e9e6de; /* bone, never pure white */
-  --color-text-secondary: #a7ada5;
-  --color-text-muted: #7e857e;
-  --color-text-faint: #565d58; /* decorative only — never content */
+  --color-text: light-dark(#1b201e, #e9e6de); /* bone, never pure white */
+  --color-text-secondary: light-dark(#454d49, #a7ada5);
+  --color-text-muted: light-dark(#646c67, #7e857e);
+  --color-text-faint: light-dark(#878e88, #565d58); /* decorative only — never content */
 
-  /* --- accent: oxidised copper ------------------------------------------- */
-  --color-accent: #57bfa4;
-  --color-accent-strong: #6fd3b7;
-  --color-accent-dim: #2e6b5d;
-  --color-accent-bg: #12211d;
+  /* --- accent: oxidised copper -------------------------------------------
+     Verdigris deepens on a light ground rather than brightening, which is
+     what the metal does; `-strong` always means further from the ground. */
+  --color-accent: light-dark(#176e5a, #57bfa4);
+  --color-accent-strong: light-dark(#115a4a, #6fd3b7);
+  --color-accent-dim: light-dark(#b7d6cc, #2e6b5d);
+  --color-accent-bg: light-dark(#e3eee9, #12211d);
+  /* Sits on an accent fill: the checkbox tick, the live pill's label. */
+  --color-on-accent: light-dark(#ffffff, #08110f);
 
   /* --- severity: colour is reserved for meaning -------------------------- */
-  --color-warn: #d8a54c;
-  --color-warn-bg: #221b0f;
-  --color-error: #d2705a;
-  --color-error-bg: #23130f;
+  --color-warn: light-dark(#8a5c12, #d8a54c);
+  --color-warn-bg: light-dark(#f6ecd6, #221b0f);
+  --color-error: light-dark(#a83e26, #d2705a);
+  --color-error-bg: light-dark(#f8e5df, #23130f);
   --color-success: var(--color-accent);
+  --color-problem: var(--color-error);
+
+  /* --- elevation ---------------------------------------------------------
+     A shadow is light subtraction, so it has to be far weaker on a light
+     ground than on a dark one or the popover reads as a smudge. */
+  --shadow-popover: 0 6px 20px light-dark(rgb(27 32 30 / 14%), rgb(0 0 0 / 45%));
 
   /* --- type -------------------------------------------------------------- */
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
@@ -113,6 +130,17 @@
   --lane-run: 70px;
   --lane-span: 64px;
   --row-padding-inline: 16px;
+}
+
+/* An explicit choice, recorded on the root element. Two rules rather than a
+   second and third copy of the palette: `color-scheme` does the switching, so
+   the tokens above stay the single source of truth for both themes. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 /* --- reset ---------------------------------------------------------------- */

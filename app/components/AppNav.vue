@@ -2,16 +2,17 @@
 const route = useRoute()
 
 const links = [
-  { to: '/', label: 'Service Log' },
+  { to: '/logs', label: 'Service Log' },
   { to: '/sessions', label: 'Sessions' },
 ]
 
 /**
- * `/` is a prefix of every route, so a plain active class would light up
- * "Service Log" everywhere. Match exactly for the root, by prefix below it.
+ * Both destinations are prefixes of their own detail routes, so a prefix match
+ * is the whole rule. `/logs` no longer needs the exact-match exception that `/`
+ * did.
  */
 function isActive(to: string) {
-  return to === '/' ? route.path === '/' : route.path.startsWith(to)
+  return route.path.startsWith(to)
 }
 </script>
 
